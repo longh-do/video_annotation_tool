@@ -378,7 +378,7 @@ export function Workspace(props: WorkspaceProps) {
   };
 
   const unchecked = boundariesToCheck(present);
-  const questions = submitQuestions(unchecked.length, keepsToEnd(present));
+  const reasons = submitReasons(unchecked.length, keepsToEnd(present));
   const submitActions: BarAction[] = [
     ...(unchecked.length > 0
       ? [
@@ -411,11 +411,31 @@ export function Workspace(props: WorkspaceProps) {
       >
         <header className="topbar">
           {props.queueBar}
-          <span className="recording-id">{info.id}</span>
-          <span className={`status-pill status-${status}`}>{STATUS[status]}</span>
-          <span className="task-name" title="What to keep in this recording: see the Task tab">
+          {/* What to do first, then where things stand; the id only to quote, e.g. in a report. */}
+          <span
+            className={`task-name${info.task ? '' : ' task-none'}`}
+            title="The task to annotate: the Task tab says what to keep"
+          >
             {info.task ? info.task.title : 'No task guide'}
           </span>
+          <span className="recording-length" title="Length of the recording">
+            {clock(info.durationS).replace(/\.\d$/, '')}
+          </span>
+          <span className={`status-pill status-${status}`}>{STATUS[status]}</span>
+          <button
+            type="button"
+            className="recording-id"
+            title="Recording ID: click to copy it, e.g. to report a problem"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() =>
+              navigator.clipboard.writeText(info.id).then(
+                () => onToast({ text: `Copied the recording ID ${info.id}` }),
+                () => onToast({ text: `Couldn't copy the recording ID: ${info.id}` }),
+              )
+            }
+          >
+            {info.id}
+          </button>
           <SaveChip status={saveStatus} />
           <div className="topbar-actions">
             <button
@@ -565,7 +585,8 @@ export function Workspace(props: WorkspaceProps) {
               {/* A question waits, without listening, while the queue or the command menu is open. */}
               {asking === 'submit' && !blocked && !showCommands && (
                 <ConfirmBar
-                  message={questions}
+                  title="Submit anyway?"
+                  details={reasons}
                   actions={submitActions}
                   armMs={ARM_MS}
                   onCancel={() => setAsking(null)}
@@ -573,7 +594,8 @@ export function Workspace(props: WorkspaceProps) {
               )}
               {asking === 'no-task' && !blocked && !showCommands && (
                 <ConfirmBar
-                  message="No useful task: cut the whole recording and submit it?"
+                  title="No useful task?"
+                  details={['This cuts the whole recording and submits it.']}
                   actions={[
                     {
                       label: 'Cut all and submit',
@@ -699,23 +721,18 @@ function keepsToEnd(timeline: Parameters<typeof stateAt>[0]): boolean {
 }
 
 /** What ⌘↵ asks about before submitting, in plain words. */
-function submitQuestions(unchecked: number, toEnd: boolean): ReactNode {
-  return (
-    <>
-      {unchecked > 0 && (
-        <p>
-          {unchecked === 1 ? '1 mark still needs' : `${unchecked} marks still need`} checking: made
-          while the video played, {unchecked === 1 ? 'it' : 'they'} may be a few frames late.
-        </p>
-      )}
-      {toEnd && (
-        <p>
-          The last interval has no stop, so it keeps everything to the end of the video. If the task
-          ended earlier, go back and press Stop ({keysOf('cut')}) where it ends.
-        </p>
-      )}
-    </>
-  );
+function submitReasons(unchecked: number, toEnd: boolean): string[] {
+  const reasons: string[] = [];
+  if (unchecked > 0) {
+    const marks = unchecked === 1 ? '1 mark still needs' : `${unchecked} marks still need`;
+    reasons.push(`${marks} checking. Marks made while the video plays can be a few frames late.`);
+  }
+  if (toEnd) {
+    reasons.push(
+      `The last interval has no stop, so it keeps everything to the end of the video. If the task ended earlier, go back and press Stop (${keysOf('cut')}) where it ends.`,
+    );
+  }
+  return reasons;
 }
 
 /** The stage's inner size, kept up to date, for laying out the cameras. */

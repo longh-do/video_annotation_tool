@@ -4,7 +4,7 @@ recordings: <pattern>, <pattern>
 
 # [Task name, e.g. Stack the cups]
 
-*To the writer (delete this paragraph):* save a copy as `[task-id].md` in the folder you pass to `pnpm ingest --tasks`. The task id is the file name: letters, digits, `-`, `_` and `.`. The header lists the recordings this task covers by id; in a pattern `*` matches any run of characters, and patterns are separated by commas or spaces. A recording gets the first guide, by file name, that covers it. The first `# ` heading is the guide's title. You write the guide before anyone has seen the recordings, so it has no timestamps, no links to moments and no recording ids. Replace everything in [brackets].
+*To the writer (delete this paragraph):* save a copy as `[task-id].md` in the `tasks/` folder inside the recordings folder (or the folder you pass to `pnpm ingest --tasks`), then run `pnpm ingest` once so the new guide is matched to its recordings; later edits to the text show on the next page load. The task id is the file name: letters, digits, `-`, `_` and `.`. The header lists the recordings this task covers by id; in a pattern `*` matches any run of characters, and patterns are separated by commas or spaces. A recording gets the first guide, by file name, that covers it. The first `# ` heading is the guide's title. You write the guide before anyone has seen the recordings, so it has no timestamps, no links to moments and no recording ids. Replace everything in [brackets].
 
 **Keep each [task] from [its start] to [its stop].** Cut everything else.
 

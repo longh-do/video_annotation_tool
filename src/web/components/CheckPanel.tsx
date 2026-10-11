@@ -46,7 +46,7 @@ export function CheckPanel(props: CheckPanelProps) {
         {checking
           ? `${left} ${left === 1 ? 'mark needs' : 'marks need'} checking. Put this one on its exact frame with , and . (or drag it on the timeline).`
           : left > 0
-            ? `${left} ${left === 1 ? 'mark needs' : 'marks need'} checking: made while the video played, they may be a few frames late.`
+            ? `${left} ${left === 1 ? 'mark needs' : 'marks need'} checking. Marks made while the video plays can be a few frames late.`
             : timeline.boundaries.length > 0 && 'Every boundary is checked.'}{' '}
         {left > 0 && (
           <button

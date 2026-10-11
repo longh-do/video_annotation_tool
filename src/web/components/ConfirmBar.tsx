@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
+import { WarningIcon } from './icons.tsx';
 
 export interface BarAction {
   readonly label: string;
@@ -9,7 +10,10 @@ export interface BarAction {
 }
 
 interface ConfirmBarProps {
-  readonly message: ReactNode;
+  /** The question, in a few words. */
+  readonly title: string;
+  /** What to know before answering, one point per line. */
+  readonly details: readonly string[];
   /** The first one is the main answer. */
   readonly actions: readonly BarAction[];
   readonly onCancel: () => void;
@@ -20,10 +24,14 @@ interface ConfirmBarProps {
   readonly armMs?: number;
 }
 
-/** A question over the bottom of the video: answer with a key or a click, or Escape to go back. */
-export function ConfirmBar({ message, actions, onCancel, armMs = 0 }: ConfirmBarProps) {
+/**
+ * A question over the bottom of the video: the question, the points behind it, and the answers
+ * in one row, the main one last. Answer with a key or a click; Escape goes back.
+ */
+export function ConfirmBar({ title, details, actions, onCancel, armMs = 0 }: ConfirmBarProps) {
   const shownAt = useRef(performance.now());
-  const messageId = useId();
+  const titleId = useId();
+  const detailsId = useId();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       // A held key is not an answer either.
@@ -40,24 +48,39 @@ export function ConfirmBar({ message, actions, onCancel, armMs = 0 }: ConfirmBar
   }, [actions, onCancel, armMs]);
 
   return (
-    <div className="confirm" role="alertdialog" aria-labelledby={messageId}>
-      <div id={messageId} className="confirm-message">
-        {message}
-      </div>
-      {actions.map((action, i) => (
-        <button
-          key={action.label}
-          type="button"
-          className={i === 0 ? 'primary' : undefined}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={action.run}
-        >
-          {action.label} <kbd>{action.keyLabel}</kbd>
+    <div
+      className="confirm"
+      role="alertdialog"
+      aria-labelledby={titleId}
+      aria-describedby={details.length > 0 ? detailsId : undefined}
+    >
+      <p id={titleId} className="confirm-title">
+        <WarningIcon />
+        {title}
+      </p>
+      {details.length > 0 && (
+        <ul id={detailsId} className="confirm-details">
+          {details.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
+      <div className="confirm-actions">
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onCancel}>
+          Back <kbd>Esc</kbd>
         </button>
-      ))}
-      <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onCancel}>
-        Back <kbd>Esc</kbd>
-      </button>
+        {actions.toReversed().map((action) => (
+          <button
+            key={action.label}
+            type="button"
+            className={action === actions[0] ? 'primary' : undefined}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={action.run}
+          >
+            {action.label} <kbd>{action.keyLabel}</kbd>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

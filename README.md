@@ -16,13 +16,13 @@ Needs Node 24+, pnpm 10, ffmpeg (optional: timestamp checks and thumbnails) and 
 
 ```bash
 pnpm install
-pnpm ingest ~/Downloads/recordings --tasks ~/Downloads/task-guides   # checks every recording, builds thumbnails
+pnpm ingest ~/Downloads/recordings   # checks every recording, builds thumbnails, reads the task guides
 pnpm dev                                                            # then open http://127.0.0.1:5173
 ```
 
 `pnpm ingest` takes the folder holding the downloads: each recording is a folder with `manifest.json`, the `*-frames.csv` files and `videos/` (the frames and manifest may also sit in an `annotation-data/` folder beside `videos/`). Nothing in it is ever modified; ingest writes `derived/catalog.json` and reports any recording it rejects. Annotations are saved in `annotations/`, telemetry in `telemetry/events.jsonl`. For a production build: `pnpm build && pnpm start`.
 
-`--tasks` is a folder of **task guides**, one Markdown file per task, written by whoever sets up the batch: what to keep and how to tell where it starts and stops. A short header lists the recordings each guide covers (`recordings: lab-2-*, kitchen-*`), and the tool shows the matching guide in the Task tab and stamps its version on every save. Edits to a guide show on the next page load; which recordings it covers is read by ingest. The guides are about the data, so they don't live in this repository; [docs/task-guide-template.md](docs/task-guide-template.md) shows how to write one. How to use the tool itself is in the Guide tab, written in [src/web/guide.md](src/web/guide.md).
+**Task guides** are Markdown files, one per task, written by whoever sets up the batch: what to keep and how to tell where it starts and stops. They go in a `tasks/` folder inside the recordings folder (or anywhere, with `--tasks <folder>`). A short header lists the recordings each guide covers (`recordings: lab-2-*, kitchen-*`), and the tool shows the matching guide in the Task tab and stamps its version on every save. Edits to a guide show on the next page load; which recordings it covers is read by ingest. The guides are about the data, so they don't live in this repository; [docs/task-guide-template.md](docs/task-guide-template.md) shows how to write one. How to use the tool itself is in the Guide tab, written in [src/web/guide.md](src/web/guide.md).
 
 ## Controls
 

@@ -80,6 +80,16 @@ export function RedoIcon() {
   );
 }
 
+/** Something to look at before going on. */
+export function WarningIcon() {
+  return (
+    <Svg>
+      <path d="M8 2.5l6 11H2z" />
+      <path d="M8 6.5v3.2M8 11.6v.1" />
+    </Svg>
+  );
+}
+
 export function ChevronIcon() {
   return (
     <Svg size={12}>

@@ -114,8 +114,36 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
-.recording-id {
+/* The task leads; the recording's id is there to quote, not to read. */
+.task-name {
+  overflow: hidden;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-none {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.recording-length {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.recording-id {
+  padding: 1px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  background: none;
+  border-color: transparent;
+}
+
+.recording-id:hover {
+  color: var(--text);
+  background: var(--raised);
 }
 
 .status-pill {
@@ -134,13 +162,6 @@ kbd {
 .status-pill.status-needs_review {
   border-color: var(--unchecked);
   color: var(--unchecked);
-}
-
-.task-name {
-  overflow: hidden;
-  color: var(--muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .save-chip {
@@ -857,33 +878,54 @@ button.check-warning {
   color: var(--text);
 }
 
-/* A question over the bottom of the video: answer with a key or a click, or Escape. */
+/* A question over the bottom of the video: a small card, the answers in one row, the main last. */
 .confirm {
   position: absolute;
-  inset: auto 12px 12px;
+  bottom: 14px;
+  left: 50%;
+  width: min(540px, calc(100% - 24px));
+  padding: 14px 16px 12px;
+  transform: translateX(-50%);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgb(0 0 0 / 0.5);
+}
+
+.confirm-title {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 10px;
+  gap: 8px;
   align-items: center;
-  padding: 10px 12px;
-  background: rgb(23 26 33 / 0.96);
-  border: 1px solid var(--unchecked);
-  border-radius: 8px;
-}
-
-.confirm-message {
-  flex: 1 1 320px;
-}
-
-.confirm-message p {
   margin: 0;
+  font-size: 15px;
+  font-weight: 600;
 }
 
-.confirm-message p + p {
+.confirm-title svg {
+  flex: none;
+  color: var(--unchecked);
+}
+
+.confirm-details {
+  margin: 6px 0 0;
+  padding-left: 42px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.confirm-details li + li {
   margin-top: 4px;
 }
 
-.confirm button {
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.confirm-actions button {
   display: inline-flex;
   gap: 6px;
   align-items: center;
