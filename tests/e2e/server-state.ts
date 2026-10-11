@@ -1,6 +1,7 @@
 /** Reading and resetting saved annotations through the real API, for test setup and checks. */
 import { type APIRequestContext, expect } from '@playwright/test';
 import type { SavedAnnotation } from '../../src/core/api-types.ts';
+import { SYNTHETIC_RECORDINGS } from './synthetic.ts';
 
 export async function savedAnnotation(
   request: APIRequestContext,
@@ -30,4 +31,12 @@ export async function resetAnnotation(request: APIRequestContext, id: string): P
     },
   });
   expect(response.ok()).toBe(true);
+}
+
+/**
+ * Every synthetic recording back to an empty draft. The server keeps annotations for the whole
+ * run, so each spec does this before each test: no test depends on what ran before it.
+ */
+export async function resetAll(request: APIRequestContext): Promise<void> {
+  for (const recording of SYNTHETIC_RECORDINGS) await resetAnnotation(request, recording.id);
 }

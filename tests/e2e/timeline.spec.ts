@@ -2,7 +2,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { resetAnnotation, savedAnnotation } from './server-state.ts';
+import { resetAll, savedAnnotation } from './server-state.ts';
 import { E2E_DIR, SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
 const recording = SYNTHETIC_RECORDINGS[1] as SyntheticRecording;
@@ -60,7 +60,7 @@ async function at(page: Page, frame: number) {
 
 const pixelRatio = (page: Page) => page.evaluate(() => window.devicePixelRatio);
 
-test.beforeEach(({ request }) => resetAnnotation(request, recording.id));
+test.beforeEach(({ request }) => resetAll(request));
 
 test('⌘+ ⌘− zoom around the playhead, ⌘0 shows it all, ⌘-scroll zooms and a swipe pans', async ({
   page,

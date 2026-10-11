@@ -8,10 +8,12 @@ import { expect, type Page, test } from '@playwright/test';
 import type { SavedAnnotation } from '../../src/core/api-types.ts';
 import { type FrameMap, frameCount, parseFramesCsv } from '../../src/core/frame-map.ts';
 import { BARCODE_PIXELS, decodeBarcode, shownFrame } from './barcode.ts';
+import { resetAll } from './server-state.ts';
 import { E2E_DIR, SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
-// Each test edits its own recording: annotations persist across tests within a run.
 const [longer, shorter] = SYNTHETIC_RECORDINGS as [SyntheticRecording, SyntheticRecording];
+
+test.beforeEach(({ request }) => resetAll(request));
 const HEAD = 'video[data-camera="head"]';
 
 async function headFrames(recording: SyntheticRecording): Promise<FrameMap> {

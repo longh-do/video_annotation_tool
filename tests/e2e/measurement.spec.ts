@@ -1,15 +1,17 @@
 /** Measurement end to end: what the page logs is what `pnpm score` reports. */
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { AnnotationFile } from '../../src/core/annotation.ts';
 import { frameNs, parseFramesCsv } from '../../src/core/frame-map.ts';
 import { readCatalog } from '../../src/server/catalog.ts';
 import { formatReport, scoreFolders } from '../../src/server/score-report.ts';
-import { resetAnnotation, savedAnnotation } from './server-state.ts';
+import { resetAll, savedAnnotation } from './server-state.ts';
 import { E2E_DIR, SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
 const recording = SYNTHETIC_RECORDINGS[4] as SyntheticRecording;
+
+test.beforeEach(({ request }) => resetAll(request));
 const TELEMETRY = join(E2E_DIR, 'telemetry', 'events.jsonl');
 
 async function events(): Promise<
@@ -27,7 +29,6 @@ test('marking, checking and submitting are logged; the score report measures the
   page,
   request,
 }) => {
-  await resetAnnotation(request, recording.id);
   await page.goto(`/#${recording.id}/0`);
   await expect(page.locator('.time[data-frame="0"]')).toBeVisible();
 
@@ -109,6 +110,7 @@ test('marking, checking and submitting are logged; the score report measures the
 
   const catalog = await readCatalog(join(E2E_DIR, 'derived', 'catalog.json'));
   const report = await scoreFolders(goldDir, join(E2E_DIR, 'annotations'), catalog, TELEMETRY);
+  await rm(goldDir, { recursive: true });
   const row = report.recordings.find((r) => r.id === recording.id)!;
   expect(row.score).toMatchObject({ startErrors: [3], endErrors: [-2], missed: 0, extra: 0 });
   expect(row.checkSeconds?.count).toBe(2);

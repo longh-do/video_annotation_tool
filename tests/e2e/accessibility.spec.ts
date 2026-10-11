@@ -1,10 +1,12 @@
 /** Accessibility basics: names for every control, labelled dialogs that take the focus. */
 import { expect, test } from '@playwright/test';
+import { resetAll } from './server-state.ts';
 import { SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
 const recording = SYNTHETIC_RECORDINGS[1] as SyntheticRecording;
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, request }) => {
+  await resetAll(request);
   await page.goto(`/#${recording.id}/10`);
   await expect(page.locator('.time[data-frame="10"]')).toBeVisible();
 });

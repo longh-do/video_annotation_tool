@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { type FrameMap, frameNs, parseFramesCsv } from '../../src/core/frame-map.ts';
 import { shownFrame } from './barcode.ts';
-import { resetAnnotation, savedAnnotation } from './server-state.ts';
+import { resetAll, savedAnnotation } from './server-state.ts';
 import { E2E_DIR, SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
 const recording = SYNTHETIC_RECORDINGS[2] as SyntheticRecording;
@@ -78,8 +78,7 @@ async function badgeAt(page: Page, frame: number) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2, trackY: track.y + 54 };
 }
 
-// Every test starts from an empty annotation of its own recording.
-test.beforeEach(({ request }) => resetAnnotation(request, recording.id));
+test.beforeEach(({ request }) => resetAll(request));
 
 test('keyboard only: mark at 2×, then the check pass puts each rough mark on its frame', async ({
   page,

@@ -1,6 +1,6 @@
 /** Moving through the queue: outcomes, the next recording, crash recovery. */
 import { expect, type Page, test } from '@playwright/test';
-import { resetAnnotation, savedAnnotation as saved } from './server-state.ts';
+import { resetAll, savedAnnotation as saved } from './server-state.ts';
 import { SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
 const [first, second] = SYNTHETIC_RECORDINGS.slice(3) as [SyntheticRecording, SyntheticRecording];
@@ -27,9 +27,7 @@ async function markInterval(page: Page, from: number, to: number) {
 }
 
 // Every recording starts as an empty draft, so the queue order is known.
-test.beforeEach(async ({ request }) => {
-  for (const recording of SYNTHETIC_RECORDINGS) await resetAnnotation(request, recording.id);
-});
+test.beforeEach(({ request }) => resetAll(request));
 
 test('⌘↵ saves the annotation as complete and the next recording opens within 300 ms', async ({
   page,

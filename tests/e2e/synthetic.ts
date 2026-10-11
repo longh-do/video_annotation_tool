@@ -40,8 +40,8 @@ export interface SyntheticRecording {
 }
 
 /**
- * In queue order (ingest orders recordings by folder). Annotations persist across the tests of a
- * run, so each spec that edits works on a recording of its own.
+ * In queue order (ingest orders recordings by folder). The server keeps annotations for the whole
+ * run; every spec puts them back to empty drafts before each test (`resetAll`).
  */
 export const SYNTHETIC_RECORDINGS: readonly SyntheticRecording[] = [
   { id: 'synthetic-a', folder: '01-synthetic-a', layout: 'together', headFrames: 600 },

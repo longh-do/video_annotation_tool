@@ -11,9 +11,12 @@ import {
   parseFramesCsv,
 } from '../../src/core/frame-map.ts';
 import { shownFrame } from './barcode.ts';
+import { resetAll } from './server-state.ts';
 import { E2E_DIR, SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
 const recording = SYNTHETIC_RECORDINGS[0] as SyntheticRecording;
+
+test.beforeEach(({ request }) => resetAll(request));
 const HEAD = 'video[data-camera="head"]';
 
 async function cameraFrames(label: string): Promise<FrameMap> {
