@@ -593,7 +593,7 @@ export function Workspace(props: WorkspaceProps) {
               {saver.stopped && (
                 <p className="banner" role="alert">
                   {saveStatus.kind === 'conflict'
-                    ? 'This recording was saved from another tab. Editing is off here so nothing is lost.'
+                    ? 'This recording was saved from another tab or computer. Editing is off here so nothing is lost.'
                     : 'The server refused this annotation, so editing is off.'}{' '}
                   <button type="button" onClick={() => location.reload()}>
                     Reload

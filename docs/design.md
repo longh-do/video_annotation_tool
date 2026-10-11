@@ -49,10 +49,10 @@ Measured with barcoded test clips: 200 of 200 marks made while paused save exact
 
 ## Saving and recovery
 
-- Every change goes to an IndexedDB **journal** at once (strict durability; Chrome's default can lose the last writes in a crash) and to the server after 300 ms of quiet, never more than 2 s later. The save chip says "Saving…" as soon as a change waits.
-- The server writes atomically (temp file, fsync, rename, directory fsync except on Windows), keeps every revision, and refuses a save based on an old revision (412); the next load finishes a save that a crash cut short. A second tab on the same recording therefore stops with a conflict instead of overwriting.
+- Every change goes to an IndexedDB **journal** at once (strict durability; Chrome's default can lose the last writes in a crash; a held key is written when it starts and when it is sent) and to the server after 300 ms of quiet, never more than 2 s later. The save chip says "Saving…" as soon as a change waits; if saving fails it says whether the server answered and whether the journal kept the change.
+- The server writes atomically (temp file, fsync, rename, directory fsync except on Windows), keeps every revision, and refuses a save based on an old revision (412); the next load finishes a save that a crash cut short. Only one tab of a browser edits a recording (a Web Lock per recording; another tab opens it read-only), so only that tab uses its journal; a save from another browser or computer meets the 412 and stops with a conflict instead of overwriting. A save whose answer was lost is not a conflict: on a 412 the client first checks whether the server already holds exactly what it sent.
 - After a crash the journal is reopened if it builds on what the server has — including when the save that was in flight landed but the page died before hearing so — and otherwise the server's version wins and the annotator is told.
-- Each recording's annotation (editor, undo history, saver) lives as long as the page, so going back to a recording keeps its undo history; the toast after "no useful task" can undo it. Keys stay off from an outcome until the next recording is on screen, so nothing typed in between lands on the wrong one.
+- The current and the previous recording keep their annotation (editor, undo history, saver) in memory, and so does any recording with changes not saved yet: going back keeps its undo history, and the toast after "no useful task" can undo it. Older ones reopen from the server. Keys stay off from an outcome until the next recording is on screen, so nothing typed in between lands on the wrong one.
 
 ```mermaid
 flowchart LR
