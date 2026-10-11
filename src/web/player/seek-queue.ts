@@ -25,6 +25,11 @@ export class SeekQueue {
     if (this.#inFlight === null) void this.#run();
   }
 
+  /** Playback is taking over: requests not started yet are dropped. */
+  cancel(): void {
+    this.#wanted = null;
+  }
+
   async #run(): Promise<void> {
     while (this.#wanted !== null) {
       const frame = this.#wanted;

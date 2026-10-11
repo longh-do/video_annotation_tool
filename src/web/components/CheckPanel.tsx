@@ -41,7 +41,7 @@ export function CheckPanel(props: CheckPanelProps) {
     <section className="check" aria-label="Check pass">
       <p className="check-status">
         {left > 0
-          ? `${left} rough ${left === 1 ? 'mark' : 'marks'} to check: Enter goes to the next one.`
+          ? `${left} rough ${left === 1 ? 'mark' : 'marks'} to check: Enter visits each one; move it with the , and . keys or a frame below, then Enter accepts.`
           : timeline.boundaries.length > 0
             ? 'Every boundary is checked.'
             : 'Press S where a task starts, D where it ends.'}{' '}

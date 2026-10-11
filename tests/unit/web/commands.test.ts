@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { emptyTimeline } from '../../../src/core/timeline.ts';
-import { createCommands } from '../../../src/web/commands.ts';
+import { createCommands, createPointerActions } from '../../../src/web/commands.ts';
 import {
   createEditor,
   type EditorAction,
@@ -15,7 +15,7 @@ function fakePlayer(frame: number, playing: boolean) {
   const seeks: number[] = [];
   const player = {
     frame,
-    snapshot: { frame, playing, speed: 2, skimming: false, seekFailed: false },
+    snapshot: { frame, playing, speed: 2, skimming: false, around: false, seekFailed: false },
     seek(to: number) {
       seeks.push(to);
       player.frame = to;
@@ -30,23 +30,23 @@ function setup(frame: number, playing: boolean, canEdit = true) {
     editorReducer,
     createEditor(emptyTimeline(200)),
   );
-  const commands = createCommands({
+  const context = {
     player,
     editor,
-    canEdit: () => canEdit,
+    canEdit: () => canEdit && editor.getState().history.gestureBase === null,
     sound: () => false,
     setSpeed: () => {},
     toggleHelp: () => {},
     submit: () => {},
     noTask: () => {},
     needsReview: () => {},
-    playAround: () => {},
-  });
+  };
+  const commands = createCommands(context);
   const run = (command: keyof typeof commands) => {
     const handler = commands[command];
     if (typeof handler === 'function') handler();
   };
-  return { player, editor, run, seeks };
+  return { player, editor, run, seeks, pointer: createPointerActions(context) };
 }
 
 const boundaries = (editor: Store<EditorState, EditorAction>) =>
@@ -99,5 +99,62 @@ describe('commands', () => {
     expect(boundaries(editor)[0]?.frame).toBe(30);
     expect(seeks.at(-1)).toBe(30);
     expect(player.frame).toBe(30);
+  });
+
+  test('undoing a nudge shows the boundary back where it was, still selected', () => {
+    const { editor, run, seeks } = setup(40, false);
+    run('keep');
+    run('nudgeBack1');
+    run('undo');
+    expect(editor.getState().selected).toBe(40);
+    expect(seeks.at(-1)).toBe(40);
+  });
+
+  test('Enter while playing around a rough mark ends the replay on it and confirms it', () => {
+    const { player, editor, run, seeks } = setup(40, true);
+    run('keep');
+    Object.assign(player.snapshot, { around: true });
+    player.frame = 52; // the replay has gone past the mark
+    run('accept');
+    expect(seeks[0]).toBe(40);
+    expect(boundaries(editor)[0]?.checked).toBe(true);
+  });
+
+  test('a thumbnail click moves the selected boundary there and shows it', () => {
+    const { editor, run, seeks, pointer } = setup(40, true);
+    run('keep');
+    pointer.pick(31);
+    expect(boundaries(editor)[0]).toMatchObject({ frame: 31, origin: 'placed', checked: true });
+    expect(seeks.at(-1)).toBe(31);
+  });
+
+  test('a drag shows the frame under the pointer, and is one undo step or nothing at all', () => {
+    const { editor, run, seeks, pointer } = setup(40, false);
+    run('keep');
+    pointer.dragStart(0);
+    pointer.drag(0, 45);
+    run('keep'); // keys don't edit mid-drag
+    pointer.drag(0, 48);
+    expect(seeks.slice(-2)).toEqual([45, 48]);
+    pointer.dragEnd();
+    expect(boundaries(editor).map((b) => b.frame)).toEqual([48]);
+    run('undo');
+    expect(boundaries(editor).map((b) => b.frame)).toEqual([40]);
+
+    pointer.dragStart(0);
+    pointer.drag(0, 60);
+    pointer.dragCancel();
+    expect(boundaries(editor).map((b) => b.frame)).toEqual([40]);
+    expect(seeks.at(-1)).toBe(40);
+  });
+
+  test('no thumbnail click or drag edits while editing is off', () => {
+    const { editor, pointer } = setup(40, false, false);
+    editor.dispatch({ type: 'mark', frame: 40, state: 'keep', origin: 'live' });
+    pointer.pick(30);
+    pointer.dragStart(0);
+    pointer.drag(0, 50);
+    pointer.dragEnd();
+    expect(boundaries(editor)[0]?.frame).toBe(40);
   });
 });

@@ -62,6 +62,17 @@ describe('editor', () => {
     expect(deleted.selected).toBeNull();
   });
 
+  test('undoing a nudge keeps the moved boundary selected, where work on it began', () => {
+    const nudged = run([
+      { type: 'mark', frame: 50, state: 'keep', origin: 'live' },
+      { type: 'nudge', delta: -1, now: 0 },
+    ]);
+    expect(nudged).toMatchObject({ selected: 49, anchor: 50 });
+    const undone = editorReducer(nudged, { type: 'undo' });
+    expect(undone).toMatchObject({ selected: 50, anchor: 50 });
+    expect(editorReducer(undone, { type: 'redo' })).toMatchObject({ selected: 49, anchor: 50 });
+  });
+
   test('undo keeps the selection only if its boundary still exists', () => {
     const marked = run([
       { type: 'mark', frame: 10, state: 'keep', origin: 'paused' },

@@ -21,7 +21,7 @@ import {
 const run = promisify(execFile);
 
 /** Bump after changing what gets generated (here or in barcode.ts), so stale copies are rebuilt. */
-const VERSION = '2';
+const VERSION = '3';
 
 /** Generated data and server state for the end-to-end tests (gitignored). */
 export const E2E_DIR = resolve(import.meta.dirname, '../../.e2e');
@@ -47,6 +47,8 @@ export const SYNTHETIC_RECORDINGS: readonly SyntheticRecording[] = [
   { id: 'synthetic-a', folder: '01-synthetic-a', layout: 'together', headFrames: 600 },
   { id: 'synthetic-b', folder: '02-synthetic-b', layout: 'split', headFrames: 240 },
   { id: 'synthetic-c', folder: '03-synthetic-c', layout: 'together', headFrames: 300 },
+  { id: 'synthetic-d', folder: '04-synthetic-d', layout: 'together', headFrames: 150 },
+  { id: 'synthetic-e', folder: '05-synthetic-e', layout: 'together', headFrames: 120 },
 ];
 
 const CAMERAS = [

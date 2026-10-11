@@ -154,10 +154,14 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case 'redo': {
       const history = (action.type === 'undo' ? undo : redo)(state.history);
       if (history === state.history) return state;
-      const kept = history.present.boundaries.some((b) => b.frame === state.selected);
       const undos = state.undos + (action.type === 'undo' ? 1 : 0);
-      const selection = kept ? unchanged(state) : selecting(null);
-      return { ...state, ...selection, history, undos, outcome: draft(state.outcome) };
+      return {
+        ...state,
+        ...reselect(state, history.present),
+        history,
+        undos,
+        outcome: draft(state.outcome),
+      };
     }
     case 'drag-start': {
       const frame = present.boundaries[action.index]?.frame;
@@ -229,6 +233,19 @@ function edit(
     outcome: draft(state.outcome),
     edits: state.edits + (dragging ? 0 : 1),
   };
+}
+
+/**
+ * The selection after undo or redo. A selected boundary that is still there stays selected; one
+ * that only moved (same number of boundaries, so same index) is followed, so undoing a nudge
+ * leaves the check where it was; otherwise nothing is selected.
+ */
+function reselect(state: EditorState, timeline: Timeline): Selection {
+  if (timeline.boundaries.some((b) => b.frame === state.selected)) return unchanged(state);
+  const index = selectedIndex(state);
+  const moved = timeline.boundaries.length === state.history.present.boundaries.length;
+  const frame = moved ? (timeline.boundaries[index]?.frame ?? null) : null;
+  return frame === null ? selecting(null) : { selected: frame, anchor: state.anchor };
 }
 
 /** Back to a draft, keeping whatever note the annotator wrote. */

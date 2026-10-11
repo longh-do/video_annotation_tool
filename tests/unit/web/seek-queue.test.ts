@@ -49,3 +49,14 @@ test('stepping from the target makes quick presses add up', async () => {
   await finish();
   expect(seeks.at(-1)).toBe(15);
 });
+
+test('when playback takes over, requests not started yet are dropped', async () => {
+  const { clock, seeks, finish } = fakeClock();
+  const queue = new SeekQueue(clock, () => {});
+  queue.request(11);
+  queue.request(14);
+  queue.cancel();
+  await finish();
+  await finish();
+  expect(seeks).toEqual([11]);
+});

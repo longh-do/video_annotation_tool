@@ -16,15 +16,17 @@ export const SKIM_SPEED = 4;
 const PAUSE_SETTLE_MS = 80;
 /** /: how far around a boundary to play, and how fast. */
 const AROUND_US = 1_000_000;
-const AROUND_SPEED = 0.5;
+export const AROUND_SPEED = 0.5;
 
 export interface PlayerSnapshot {
   /** The frame on screen; -1 until the first one is presented. */
   readonly frame: number;
   readonly playing: boolean;
-  /** The marking speed; skimming overrides it while F is held. */
+  /** The marking speed; skimming and playing around a boundary override it meanwhile. */
   readonly speed: number;
   readonly skimming: boolean;
+  /** Playing a second either side of a boundary (/), at half speed. */
+  readonly around: boolean;
   /** A paused seek could not be verified: the screen may not show the frame a mark would save. */
   readonly seekFailed: boolean;
 }
@@ -47,7 +49,14 @@ export class Player {
     this.#frames = frames;
     this.clock = new FrameClock(video, frames);
     this.#queue = new SeekQueue(this.clock, (_frame, result) => this.#onSeekSettled(result));
-    this.#snapshot = { frame: -1, playing: false, speed, skimming: false, seekFailed: false };
+    this.#snapshot = {
+      frame: -1,
+      playing: false,
+      speed,
+      skimming: false,
+      around: false,
+      seekFailed: false,
+    };
     video.playbackRate = speed;
 
     this.#disposers.push(this.clock.subscribe((frame) => this.#update({ frame })));
@@ -92,7 +101,9 @@ export class Player {
 
   /** Plays from here; at the end, stays there rather than starting over. */
   play(): void {
-    if (!this.#video.ended) void this.#video.play();
+    if (this.#video.ended) return;
+    this.#queue.cancel();
+    void this.#video.play();
   }
 
   /** Pauses, then puts `currentTime` on the frame actually on screen (unless a seek came first). */
@@ -150,6 +161,7 @@ export class Player {
       this.#video.removeEventListener('pause', stop);
       this.#video.playbackRate = this.#snapshot.speed;
       this.#stopAround = null;
+      this.#update({ around: false });
     };
     const unsubscribe = this.clock.subscribe((shown) => {
       if (shown < until) return;
@@ -157,9 +169,11 @@ export class Player {
       this.seek(frame);
     });
     this.#stopAround = stop;
+    this.#queue.cancel();
     this.#video.currentTime = this.clock.seekTime(from);
     this.#video.playbackRate = AROUND_SPEED;
     this.#video.addEventListener('pause', stop);
+    this.#update({ around: true });
     void this.#video.play();
   }
 

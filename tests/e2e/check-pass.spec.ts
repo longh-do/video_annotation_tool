@@ -2,9 +2,9 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import type { SavedAnnotation } from '../../src/core/api-types.ts';
 import { type FrameMap, frameNs, parseFramesCsv } from '../../src/core/frame-map.ts';
 import { shownFrame } from './barcode.ts';
+import { resetAnnotation, savedAnnotation } from './server-state.ts';
 import { E2E_DIR, SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
 const recording = SYNTHETIC_RECORDINGS[2] as SyntheticRecording;
@@ -22,12 +22,22 @@ async function headFrames(): Promise<FrameMap> {
   return parseFramesCsv(await readFile(csv, 'utf8'));
 }
 
-async function saved(page: Page): Promise<SavedAnnotation | null> {
-  const response = await page.request.get(`/api/annotations/${recording.id}`);
-  return response.ok() ? ((await response.json()) as SavedAnnotation) : null;
+/** Marks keep at 1.2 s and cut 1.5 s later, live at 2×: two rough marks to check. */
+async function markLive(page: Page) {
+  await open(page, 0);
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(1200);
+  await page.keyboard.press('s');
+  await page.waitForTimeout(1500);
+  await page.keyboard.press('d');
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Space');
+  return savedWhen(page, (b) => b.length === 2);
 }
 
-const boundariesOf = (annotation: SavedAnnotation | null): Boundary[] =>
+const saved = (page: Page) => savedAnnotation(page.request, recording.id);
+
+const boundariesOf = (annotation: Awaited<ReturnType<typeof saved>>): Boundary[] =>
   (annotation?.sidecar?.boundaries ?? []).map(({ frame, state, origin, checked }) => ({
     frame,
     state,
@@ -62,41 +72,12 @@ async function expectShown(page: Page, frame: number) {
 }
 
 // Every test starts from an empty annotation of its own recording.
-test.beforeEach(async ({ page }) => {
-  const current = await saved(page);
-  if (!current || current.annotation.keep_intervals.length + boundariesOf(current).length === 0) {
-    return;
-  }
-  const frames = await headFrames();
-  const response = await page.request.put(`/api/annotations/${recording.id}`, {
-    headers: { 'If-Match': `"${current.revision}"` },
-    data: {
-      annotation: { ...current.annotation, status: 'not_reviewed', keep_intervals: [], notes: '' },
-      sidecar: {
-        schema_version: 1,
-        frame_count: frames.ptsUs.length,
-        boundaries: [],
-        review_reason: null,
-        resume: { frame: 0, playback_rate: 2 },
-        effort: { active_ms: 0, wall_ms: 0, edits: 0, undos: 0 },
-      },
-    },
-  });
-  expect(response.ok()).toBe(true);
-});
+test.beforeEach(({ request }) => resetAnnotation(request, recording.id));
 
 test('keyboard only: mark at 2×, then the check pass puts each rough mark on its frame', async ({
   page,
 }) => {
-  await open(page, 0);
-  await page.keyboard.press('Space');
-  await page.waitForTimeout(1200);
-  await page.keyboard.press('s');
-  await page.waitForTimeout(1500);
-  await page.keyboard.press('d');
-  await page.waitForTimeout(300);
-  await page.keyboard.press('Space');
-  const [start, end] = await savedWhen(page, (b) => b.length === 2);
+  const [start, end] = await markLive(page);
   expect([start, end].map((b) => [b?.state, b?.origin, b?.checked])).toEqual([
     ['keep', 'live', false],
     ['cut', 'live', false],
@@ -221,7 +202,7 @@ test('boundary edits undo and redo exactly, step by step', async ({ page }) => {
   await step(() => page.keyboard.press('Backspace')); // the cut from 80 goes
   await step(async () => {
     // Drag the keep from 114 a little to the left on the detail timeline.
-    const handle = page.locator('.detail .handle[aria-valuenow="114"]');
+    const handle = page.locator('.detail .handle[data-frame="114"]');
     const box = (await handle.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
@@ -252,16 +233,16 @@ test('Escape during a drag puts the boundary back', async ({ page }) => {
   await page.keyboard.press('s');
   const before = await savedWhen(page, (b) => b.length === 1);
   const revision = (await saved(page))!.revision;
-  const handle = page.locator('.detail .handle[aria-valuenow="100"]');
+  const handle = page.locator('.detail .handle[data-frame="100"]');
   const box = (await handle.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 5 });
-  await expect(page.locator('.detail .handle[aria-valuenow="100"]')).toHaveCount(0);
+  await expect(page.locator('.detail .handle[data-frame="100"]')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page.mouse.up();
   await expectShown(page, 100);
-  await expect(page.locator('.detail .handle-selected')).toHaveAttribute('aria-valuenow', '100');
+  await expect(page.locator('.detail .handle-selected')).toHaveAttribute('data-frame', '100');
   await page.waitForTimeout(700);
   expect((await saved(page))!.revision).toBe(revision);
   expect(boundariesOf(await saved(page))).toEqual(before);
@@ -274,7 +255,8 @@ test('a very short run is pointed out, and X flips it away', async ({ page }) =>
   await expectShown(page, 204);
   await page.keyboard.press('d');
   await savedWhen(page, (b) => b.length === 2);
-  await page.getByRole('button', { name: /1 very short run/ }).click();
+  await expect(page.getByRole('button', { name: /1 very short run/ })).toBeVisible();
+  await page.keyboard.press('BracketLeft');
   await expectShown(page, 200);
   await expect(page.locator('.check-status')).toContainText('This keep lasts only');
   await page.keyboard.press('x');
@@ -294,11 +276,101 @@ test('the interval list jumps to an interval; the guideline is one tab away', as
   await expect(intervals).toHaveCount(1);
   await intervals.first().click();
   await expectShown(page, 60);
-  await expect(page.locator('.detail .handle-selected')).toHaveAttribute('aria-valuenow', '60');
+  await expect(page.locator('.detail .handle-selected')).toHaveAttribute('data-frame', '60');
 
   await page.getByRole('tab', { name: 'Guideline' }).click();
-  await expect(page.getByRole('tabpanel', { name: 'Guideline' }).locator('h1')).toBeVisible();
-  // The panel never takes the keyboard.
+  const guideline = page.getByRole('tabpanel', { name: 'Guideline' });
+  await expect(guideline.locator('h1')).toBeVisible();
+  // Neither the panel nor a link in it takes the keyboard.
   await page.keyboard.press('Shift+ArrowRight');
   await expectShown(page, 70);
+  await guideline.locator('a').first().click();
+  await page.keyboard.press('Space');
+  await expect(page.locator('.time')).not.toHaveAttribute('data-frame', '70');
+  await page.keyboard.press('Space');
+});
+
+test('/ right after Enter plays the second before the mark, not just after it', async ({
+  page,
+}) => {
+  const [start] = await markLive(page);
+  // Every frame the readout shows over the next 1.5 s.
+  const seen = page.evaluate(
+    () =>
+      new Promise<number[]>((resolve) => {
+        const time = document.querySelector('.time')!;
+        const frames: number[] = [];
+        const observer = new MutationObserver(() =>
+          frames.push(Number(time.getAttribute('data-frame'))),
+        );
+        observer.observe(time, { attributes: true, attributeFilter: ['data-frame'] });
+        setTimeout(() => {
+          observer.disconnect();
+          resolve(frames);
+        }, 1500);
+      }),
+  );
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Slash');
+  const before = (await seen).filter((frame) => frame < start!.frame);
+  expect(new Set(before).size).toBeGreaterThanOrEqual(10);
+  await expect(page.locator(`.time[data-frame="${start!.frame}"]`)).toBeVisible({
+    timeout: 10_000,
+  });
+});
+
+test('Enter while / replays accepts the mark at once and goes to the next', async ({ page }) => {
+  const [start, end] = await markLive(page);
+  await page.keyboard.press('Enter');
+  await expectShown(page, start!.frame);
+  await page.keyboard.press('Slash');
+  await expect(page.locator('.speed')).toHaveText('0.5× replay');
+  await page.waitForTimeout(400);
+  await page.keyboard.press('Enter');
+  await expectShown(page, end!.frame);
+  await expect(page.locator('.speed')).toHaveText('2×');
+  const [accepted] = await savedWhen(page, (b) => b[0]?.checked === true);
+  expect(accepted).toMatchObject({ frame: start!.frame, origin: 'live', checked: true });
+});
+
+test('a long check pass keeps every filmstrip right, back to the first boundary', async ({
+  page,
+}) => {
+  // The longest clip: enough marks that the first strips' thumbnails get released.
+  const long = SYNTHETIC_RECORDINGS[0] as SyntheticRecording;
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(`/#${long.id}/10`);
+  await expect(page.locator('.time[data-frame="10"]')).toBeVisible();
+  try {
+    for (let i = 0; i < 24; i++) {
+      const frame = 10 + i * 23;
+      await page.evaluate((hash) => {
+        location.hash = hash;
+      }, `${long.id}/${frame}`);
+      await expect(page.locator(`.time[data-frame="${frame}"]`)).toBeVisible();
+      await page.keyboard.press(i % 2 === 0 ? 's' : 'd');
+      await expect(page.locator('.thumb-mark')).toHaveAttribute(
+        'title',
+        new RegExp(`frame ${frame}$`),
+      );
+      // Every thumbnail grabbed before going on, so the cache really fills up.
+      await expect(page.locator('.filmstrip .thumb-empty')).toHaveCount(0);
+    }
+    await page.locator('.intervals .interval').first().click();
+    await expect(page.locator('.time[data-frame="10"]')).toBeVisible();
+    const thumbs = page.locator('.filmstrip .thumb');
+    const count = await thumbs.count();
+    for (let i = 0; i < count; i++) {
+      const frame = Number((await thumbs.nth(i).getAttribute('title'))?.match(/\d+$/)?.[0]);
+      await expect
+        .poll(() => shownFrame(page, `.filmstrip .thumb:nth-of-type(${i + 1}) canvas`))
+        .toBe(frame);
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    // The other specs use this recording too: clean up once the last mark is on the server.
+    await expect(page.locator('.save-chip')).toHaveAttribute('data-save', 'saved');
+    await resetAnnotation(page.request, long.id);
+  }
 });

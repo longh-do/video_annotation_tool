@@ -5,10 +5,10 @@ import {
   validateAnnotationFile,
   validateSidecarDraft,
 } from '../../../src/core/annotation.ts';
-import type { SavedAnnotation } from '../../../src/core/api-types.ts';
+import type { SavedAnnotation, SavePayload } from '../../../src/core/api-types.ts';
 import { emptyTimeline } from '../../../src/core/timeline.ts';
 import { createEditor, type EditorAction, editorReducer } from '../../../src/web/editor.ts';
-import { fromSaved, toSavePayload } from '../../../src/web/persistence.ts';
+import { fromSaved, startingPoint, toSavePayload } from '../../../src/web/persistence.ts';
 import { frameMap } from '../synthetic.ts';
 
 const frames = frameMap(3_000_000_000_000n, new Array(99).fill(33_000));
@@ -69,4 +69,57 @@ describe('saving', () => {
     expect(restored.revision).toBe(3);
     expect(fromSaved(null, frames)).toMatchObject({ revision: 0, resumeFrame: 0 });
   });
+
+  test('changes left in the journal reopen if the server still has the revision they build on', () => {
+    const saved = savedAt(5, toSavePayload(edited(), reference, session));
+    const more = editorReducer(edited(), {
+      type: 'mark',
+      frame: 60,
+      state: 'keep',
+      origin: 'paused',
+    });
+    const payload = toSavePayload(more, reference, session);
+    const entry = { recordingId: 'rec', baseRevision: 5, payload, writtenAt: 1 };
+
+    const recovered = startingPoint(saved, entry);
+    expect(recovered).toMatchObject({ recovered: true, discarded: false });
+    expect(fromSaved(recovered.start, frames).editor.history.present).toEqual(more.history.present);
+    expect(fromSaved(recovered.start, frames).revision).toBe(5);
+
+    // Nothing saved yet: the journal builds on revision 0.
+    expect(startingPoint(null, { ...entry, baseRevision: 0 }).recovered).toBe(true);
+  });
+
+  test('if the server moved on, its version wins; the journal only counts as lost if different', () => {
+    const payload = toSavePayload(edited(), reference, session);
+    const entry = { recordingId: 'rec', baseRevision: 5, payload, writtenAt: 1 };
+    // The save landed but its answer was lost: same content, nothing lost.
+    expect(startingPoint(savedAt(6, payload), entry)).toEqual({
+      start: savedAt(6, payload),
+      recovered: false,
+      discarded: false,
+    });
+    // Another tab saved something else since.
+    const other = toSavePayload(createEditor(emptyTimeline(100)), reference, session);
+    expect(startingPoint(savedAt(6, other), entry)).toMatchObject({
+      recovered: false,
+      discarded: true,
+    });
+    expect(startingPoint(savedAt(6, other), null)).toMatchObject({ discarded: false });
+  });
 });
+
+function savedAt(revision: number, { annotation, sidecar }: SavePayload): SavedAnnotation {
+  return {
+    revision,
+    annotation,
+    sidecar: {
+      ...sidecar,
+      revision,
+      saved_at: '2030-01-01T00:00:00.000Z',
+      annotator_id: 'a1',
+      guideline_version: null,
+      tool_version: '0.1.0',
+    },
+  };
+}

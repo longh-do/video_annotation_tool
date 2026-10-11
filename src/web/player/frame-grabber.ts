@@ -15,6 +15,7 @@ export class FrameGrabber {
   readonly #clock: FrameClock;
   readonly #cache = new Map<number, ImageBitmap>();
   #work: Promise<unknown> = Promise.resolve();
+  #disposed = false;
 
   constructor(src: string, frames: FrameMap) {
     this.#video = document.createElement('video');
@@ -36,12 +37,15 @@ export class FrameGrabber {
       this.#cache.set(k, cached);
       return Promise.resolve(cached);
     }
-    const result = this.#work.then(() => (signal?.aborted ? null : this.#grabNow(k)));
+    const result = this.#work.then(() =>
+      signal?.aborted || this.#disposed ? null : this.#grabNow(k),
+    );
     this.#work = result.catch(() => {});
     return result;
   }
 
   dispose(): void {
+    this.#disposed = true;
     this.#clock.dispose();
     for (const bitmap of this.#cache.values()) bitmap.close();
     this.#cache.clear();
@@ -52,12 +56,7 @@ export class FrameGrabber {
   async #grabNow(k: number): Promise<ImageBitmap | null> {
     const cached = this.#cache.get(k);
     if (cached) return cached;
-    if (this.#video.readyState < HTMLMediaElement.HAVE_METADATA) {
-      await new Promise((resolve) =>
-        this.#video.addEventListener('loadeddata', resolve, { once: true }),
-      );
-    }
-    if ((await this.#clock.seekToFrame(k)) !== true) return null;
+    if ((await this.#clock.seekToFrame(k)) !== true || this.#disposed) return null;
     const height = Math.round((WIDTH * this.#video.videoHeight) / this.#video.videoWidth);
     const bitmap = await createImageBitmap(this.#video, {
       resizeWidth: WIDTH,

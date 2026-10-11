@@ -2,6 +2,7 @@
 import {
   keepIntervals,
   type Reference,
+  type SidecarDraft,
   sidecarBoundaries,
   timelineFromIntervals,
   timelineFromSidecar,
@@ -10,6 +11,7 @@ import type { SavedAnnotation, SavePayload } from '../core/api-types.ts';
 import { type FrameMap, frameCount } from '../core/frame-map.ts';
 import { emptyTimeline, type Timeline } from '../core/timeline.ts';
 import { createEditor, type EditorState } from './editor.ts';
+import type { JournalEntry } from './journal.ts';
 
 export interface SessionState {
   /** Where to reopen the recording. */
@@ -58,11 +60,18 @@ export interface Restored {
   readonly wallMs: number;
 }
 
+/** What can be reopened: a saved annotation, or changes that never reached the server. */
+export interface Reopenable {
+  readonly revision: number;
+  readonly annotation: SavedAnnotation['annotation'];
+  readonly sidecar: SidecarDraft | null;
+}
+
 /**
  * Picks up where the last save left off: the sidecar restores every boundary exactly; a contract
  * file on its own (e.g. written by another tool) restores the kept intervals.
  */
-export function fromSaved(saved: SavedAnnotation | null, frames: FrameMap): Restored {
+export function fromSaved(saved: Reopenable | null, frames: FrameMap): Restored {
   const sidecar = saved?.sidecar ?? null;
   let timeline: Timeline = emptyTimeline(frameCount(frames));
   if (sidecar) timeline = timelineFromSidecar(sidecar.boundaries, frames);
@@ -80,4 +89,43 @@ export function fromSaved(saved: SavedAnnotation | null, frames: FrameMap): Rest
     activeMs: sidecar?.effort.active_ms ?? 0,
     wallMs: sidecar?.effort.wall_ms ?? 0,
   };
+}
+
+export interface StartingPoint {
+  readonly start: Reopenable | null;
+  /** The journal held changes the server never got: they are reopened and must be saved. */
+  readonly recovered: boolean;
+  /** The journal held changes that lost to a newer save (e.g. from another tab). */
+  readonly discarded: boolean;
+}
+
+/**
+ * Where to reopen a recording. Changes left in the journal are reopened if they build on the
+ * revision the server still has. If the server has moved on, its version wins: either the save
+ * landed and only its answer was lost (same content), or another tab saved since.
+ */
+export function startingPoint(
+  saved: SavedAnnotation | null,
+  unsaved: JournalEntry | null,
+): StartingPoint {
+  const revision = saved?.revision ?? 0;
+  if (unsaved?.baseRevision === revision) {
+    return { start: { revision, ...unsaved.payload }, recovered: true, discarded: false };
+  }
+  const discarded = unsaved !== null && !sameContent(saved, unsaved.payload);
+  return { start: saved, recovered: false, discarded };
+}
+
+function sameContent(saved: SavedAnnotation | null, payload: SavePayload): boolean {
+  if (!saved?.sidecar) return false;
+  const { status, notes, keep_intervals } = saved.annotation;
+  const essence = (boundaries: SidecarDraft['boundaries']) =>
+    JSON.stringify(boundaries.map((b) => [b.frame, b.state, b.origin, b.checked]));
+  return (
+    status === payload.annotation.status &&
+    notes === payload.annotation.notes &&
+    JSON.stringify(keep_intervals) === JSON.stringify(payload.annotation.keep_intervals) &&
+    saved.sidecar.review_reason === payload.sidecar.review_reason &&
+    essence(saved.sidecar.boundaries) === essence(payload.sidecar.boundaries)
+  );
 }

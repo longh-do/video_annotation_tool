@@ -2,59 +2,87 @@
  * The annotation screen for one recording: the reference video beside the secondary cameras and
  * a side panel (kept intervals, guideline); under it the state chip, the check pass and the two
  * timelines; the key legend at the bottom. The keyboard does everything; every key also has a
- * button.
+ * button. Submitting, "no useful task" and "needs review" save an outcome and hand over to the
+ * queue.
  */
-import { useEffect, useEffectEvent, useMemo, useState, useSyncExternalStore } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { Session } from '../core/api-types.ts';
-import { createCommands } from './commands.ts';
+import { boundariesToCheck } from '../core/check.ts';
+import { stateAt } from '../core/timeline.ts';
+import type { AnnotationSession } from './annotation-session.ts';
+import { type CommandContext, createCommands, createPointerActions } from './commands.ts';
 import { CameraView } from './components/CameraView.tsx';
 import { CheckPanel } from './components/CheckPanel.tsx';
+import { ConfirmBar } from './components/ConfirmBar.tsx';
 import { DetailTimeline } from './components/DetailTimeline.tsx';
 import { GuidelinePanel } from './components/GuidelinePanel.tsx';
 import { IntervalList } from './components/IntervalList.tsx';
 import { HelpOverlay, KeyLegend } from './components/KeyLegend.tsx';
 import { Overview } from './components/Overview.tsx';
 import { Readout } from './components/Readout.tsx';
+import { ReviewDialog } from './components/ReviewDialog.tsx';
 import { SaveChip } from './components/SaveChip.tsx';
 import { SidePanel } from './components/SidePanel.tsx';
-import { type EditorAction, type EditorState, editorReducer, selectedIndex } from './editor.ts';
+import type { ToastMessage } from './components/Toast.tsx';
+import type { EditorAction } from './editor.ts';
 import { type Command, installKeymap, type KeyHandler } from './keymap.ts';
 import { placeFromHash } from './location.ts';
-import { fromSaved, toSavePayload } from './persistence.ts';
 import { FrameGrabber } from './player/frame-grabber.ts';
-import { DEFAULT_SPEED, Player, SKIM_SPEED } from './player/player.ts';
+import { AROUND_SPEED, DEFAULT_SPEED, Player, SKIM_SPEED } from './player/player.ts';
 import { usePlayer } from './player/use-player.ts';
 import type { LoadedRecording } from './recording.ts';
-import { Saver } from './saver.ts';
 import { readResumeFrame, readSetting, writeResumeFrame, writeSetting } from './settings.ts';
-import { Store } from './store.ts';
+
+/** An outcome was saved: what to tell the annotator, and whether the toast can undo it. */
+export interface Finished {
+  readonly id: string;
+  readonly text: string;
+  readonly undo: boolean;
+}
 
 interface WorkspaceProps {
   readonly recording: LoadedRecording;
+  /** The recording's annotation; it lives on after this screen closes. */
+  readonly annotation: AnnotationSession;
   readonly session: Session;
   /** False outside Chrome/Edge: the video can be watched, not marked. */
   readonly canMark: boolean;
+  /** Where the recording is in the queue, for the top bar. */
+  readonly queueBar: ReactNode;
+  /** Something over the screen (the queue) has the keyboard. */
+  readonly blocked: boolean;
+  readonly onFinished: (finished: Finished) => void;
+  readonly onToast: (message: ToastMessage) => void;
 }
 
-export function Workspace({ recording, session, canMark }: WorkspaceProps) {
+type Question = 'keep-to-end' | 'no-task' | 'review';
+
+export function Workspace(props: WorkspaceProps) {
+  const { recording, annotation, session, canMark, blocked, onFinished, onToast } = props;
   const { info, frames: cameraFrames } = recording;
   const camera = info.cameras[0]!;
   const frames = cameraFrames[0]!;
-
-  const [restored] = useState(() => fromSaved(recording.saved, frames));
-  const [editor] = useState(
-    () => new Store<EditorState, EditorAction>(editorReducer, restored.editor),
-  );
-  const [saver] = useState(() => new Saver(info.id, restored.revision, null));
+  const { editor, saver } = annotation;
   const state = useSyncExternalStore(editor.subscribe, editor.getState);
   const saveStatus = useSyncExternalStore(saver.subscribe, () => saver.status);
 
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
   const [grabber, setGrabber] = useState<FrameGrabber | null>(null);
-  const speedLabel = usePlayer(player, (s) => (s.skimming ? `${SKIM_SPEED}× skim` : `${s.speed}×`));
+  const speedLabel = usePlayer(player, (s) =>
+    s.around ? `${AROUND_SPEED}× replay` : s.skimming ? `${SKIM_SPEED}× skim` : `${s.speed}×`,
+  );
   const seekFailed = usePlayer(player, (s) => s.seekFailed);
   const [showHelp, setShowHelp] = useState(false);
+  /** An outcome waiting for a confirmation or a reason. */
+  const [asking, setAsking] = useState<Question | null>(null);
   const [sound, setSound] = useState(() => readSetting('sound', true));
 
   useEffect(() => {
@@ -71,23 +99,35 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
   }, [camera.videoUrl, frames]);
 
   // Open at the frame a link names, else where this recording was left. An applied link is
-  // trimmed from the URL, so a reload reopens where the annotator was, not at the old link.
+  // trimmed from the URL, so a reload reopens where the annotator was, not at the old link. The
+  // choice is made once: the effect can run again (a new player) after the link is gone.
+  const opening = useRef<number | null>(null);
   useEffect(() => {
     if (!player) return;
-    const goToLinkedFrame = () => {
+    const linkedFrame = () => {
       const place = placeFromHash();
-      if (place.recordingId !== info.id || place.frame === null) return false;
-      player.seek(place.frame);
+      if (place.recordingId !== info.id || place.frame === null) return null;
       history.replaceState(null, '', `#${encodeURIComponent(info.id)}`);
-      return true;
+      return place.frame;
     };
-    if (!goToLinkedFrame()) {
-      const resume = readResumeFrame(info.id) ?? restored.resumeFrame;
-      if (resume > 0) player.seek(resume);
-    }
-    window.addEventListener('hashchange', goToLinkedFrame);
-    return () => window.removeEventListener('hashchange', goToLinkedFrame);
-  }, [player, restored, info.id]);
+    opening.current ??= linkedFrame() ?? readResumeFrame(info.id) ?? annotation.place.frame;
+    if (opening.current > 0) player.seek(opening.current);
+    const followLink = () => {
+      const frame = linkedFrame();
+      if (frame !== null) player.seek(frame);
+    };
+    window.addEventListener('hashchange', followLink);
+    return () => window.removeEventListener('hashchange', followLink);
+  }, [player, annotation, info.id]);
+
+  // The annotation saves where the annotator is, to reopen there on another computer.
+  useEffect(() => {
+    if (!player) return;
+    return annotation.attach(() => ({
+      frame: Math.max(player.frame, 0),
+      playbackRate: player.snapshot.speed,
+    }));
+  }, [player, annotation]);
 
   // Remember the place whenever the video stops, to reopen there.
   useEffect(() => {
@@ -97,54 +137,6 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
     });
   }, [player, info.id]);
 
-  const payload = useEffectEvent(() =>
-    toSavePayload(
-      editor.getState(),
-      { recordingId: info.id, referenceVideo: camera.video, frames },
-      {
-        resumeFrame: Math.max(player?.frame ?? 0, 0),
-        playbackRate: player?.snapshot.speed ?? DEFAULT_SPEED,
-        activeMs: 0,
-        wallMs: 0,
-      },
-    ),
-  );
-
-  // Save each change to the annotation (not to the selection), never mid-drag.
-  useEffect(() => {
-    let last = editor.getState();
-    return editor.subscribe(() => {
-      const current = editor.getState();
-      if (current.history.gestureBase !== null) return;
-      if (current.history.present === last.history.present && current.outcome === last.outcome)
-        return;
-      last = current;
-      saver.save(payload());
-    });
-  }, [editor, saver]);
-
-  // Send what is pending when the page is hidden, closed or left, and warn before closing
-  // with unsaved work.
-  useEffect(() => {
-    const flush = () => void saver.flush(true);
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') flush();
-    };
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (saver.dirty) event.preventDefault();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('pagehide', flush);
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('pagehide', flush);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-      flush();
-      saver.dispose();
-    };
-  }, [saver]);
-
   // Closing the key list hands the keyboard back to the shortcuts.
   useEffect(() => {
     if (!showHelp && document.activeElement instanceof HTMLElement) document.activeElement.blur();
@@ -152,32 +144,64 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
 
   // Editing stops once saving has: anything typed after a conflict would be lost. Keys don't
   // edit during a drag either: the drag is one undo step.
-  const editable = canMark && recording.seekable && !seekFailed && !saver.stopped && !showHelp;
-  const canEdit = useEffectEvent(() => editable && editor.getState().history.gestureBase === null);
-  const soundOn = useEffectEvent(() => sound);
-  const commands = useMemo(
-    () =>
-      player &&
-      createCommands({
-        player,
-        editor,
-        canEdit,
-        sound: soundOn,
-        setSpeed: (speed) => {
-          player.setSpeed(speed);
-          writeSetting('speed', speed);
-        },
-        toggleHelp: () => setShowHelp((shown) => !shown),
-        submit: () => {},
-        noTask: () => {},
-        needsReview: () => {},
-        playAround: () =>
-          player.playAround(editor.getState().selected ?? Math.max(player.frame, 0)),
-      }),
-    [player, editor],
+  const editable =
+    canMark &&
+    recording.seekable &&
+    !seekFailed &&
+    !saver.stopped &&
+    !showHelp &&
+    !blocked &&
+    asking === null;
+
+  /** Saves an outcome; once it is on the server, the queue moves on. */
+  const finish = async (action: EditorAction, finished: Omit<Finished, 'id'>) => {
+    setAsking(null);
+    if (await annotation.finish(action)) onFinished({ id: info.id, ...finished });
+    else {
+      onToast({ text: 'Not saved yet, so this recording stays open. The save status says why.' });
+    }
+  };
+  const submitted = { text: `Submitted ${info.id}.`, undo: false };
+
+  // Keys and the mouse share one context. The keymap asks for the handlers at each key press,
+  // so the values read here are those of the latest render.
+  const context: CommandContext | null = player && {
+    player,
+    editor,
+    canEdit: () => editable && editor.getState().history.gestureBase === null,
+    sound: () => sound,
+    setSpeed: (speed) => {
+      player.setSpeed(speed);
+      writeSetting('speed', speed);
+    },
+    toggleHelp: () => setShowHelp((shown) => !shown),
+    // ⌘↵: rough marks are checked first, and a keep that runs to the end is confirmed.
+    submit: () => {
+      const timeline = editor.getState().history.present;
+      const rough = boundariesToCheck(timeline);
+      const first = timeline.boundaries[rough[0] ?? -1];
+      if (first) {
+        pointer?.goTo(first.frame);
+        onToast({
+          text: `${rough.length} rough ${rough.length === 1 ? 'mark' : 'marks'} to check before submitting: Enter accepts each one.`,
+        });
+      } else if (stateAt(timeline, timeline.frameCount - 1) === 'keep') {
+        setAsking('keep-to-end');
+      } else {
+        void finish({ type: 'submit' }, submitted);
+      }
+    },
+    noTask: () => setAsking('no-task'),
+    needsReview: () => setAsking('review'),
+  };
+  const commands = context && createCommands(context);
+  const pointer = context && createPointerActions(context);
+  // While the key list is open, only H (to close it) reaches the commands; while the queue or a
+  // question is up, none do.
+  useKeymap(
+    commands,
+    (command) => !blocked && asking === null && (!showHelp || command === 'help'),
   );
-  // While the key list is open, only H (to close it) reaches the commands.
-  useKeymap(commands, (command) => !showHelp || command === 'help');
 
   const run = (command: Command) => {
     const handler = commands?.[command];
@@ -187,19 +211,10 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
     setSound(!sound);
     writeSetting('sound', !sound);
   };
-  /** Select a boundary and show its frame. */
-  const goTo = (frame: number) => {
-    editor.dispatch({ type: 'select', frame });
-    player?.seek(frame);
-  };
-  /** Show where an edit put the selected boundary. */
-  const showSelected = (next: EditorState) => {
-    if (next.selected !== null) player?.seek(next.selected);
-  };
 
   return (
     <>
-      <div className="workspace" inert={showHelp}>
+      <div className="workspace" inert={showHelp || blocked || asking === 'review'}>
         <header className="topbar">
           <span className="recording-id">{info.id}</span>
           <span className={`status status-${state.outcome.status}`}>
@@ -209,6 +224,7 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
             {session.annotatorId}
             {session.guideline ? ` · ${session.guideline.title}` : ''}
           </span>
+          {props.queueBar}
           <SaveChip status={saveStatus} />
         </header>
 
@@ -247,6 +263,27 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
                 </button>
               </p>
             )}
+            {asking === 'keep-to-end' && (
+              <ConfirmBar
+                message="The last kept interval runs to the end of the video. Submit anyway?"
+                confirmLabel="↵"
+                confirms={(event) => event.key === 'Enter'}
+                onConfirm={() => void finish({ type: 'submit' }, submitted)}
+                onCancel={() => setAsking(null)}
+              />
+            )}
+            {asking === 'no-task' && (
+              <ConfirmBar
+                message="No useful task: cut the whole recording and submit it?"
+                confirmLabel="↵"
+                onConfirm={() => {
+                  // The toast can undo it, if there was something to cut.
+                  const undo = editor.getState().history.present.boundaries.length > 0;
+                  void finish({ type: 'no-task' }, { text: `${info.id}: no useful task.`, undo });
+                }}
+                onCancel={() => setAsking(null)}
+              />
+            )}
           </div>
           <aside className="side">
             {info.cameras.slice(1).map((secondary, i) => (
@@ -281,12 +318,8 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
             frames={frames}
             selected={state.selected}
             anchor={state.anchor}
-            onVisit={goTo}
-            onPick={(frame) => {
-              const index = selectedIndex(editor.getState());
-              if (!editable || index < 0) return;
-              showSelected(editor.dispatch({ type: 'move', index, frame, origin: 'placed' }));
-            }}
+            onVisit={(frame) => pointer?.goTo(frame)}
+            onPick={(frame) => pointer?.pick(frame)}
           />
           <Overview
             player={player}
@@ -302,15 +335,10 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
             frames={frames}
             selected={state.selected}
             onSeek={(target) => player?.seek(target)}
-            onDragStart={(index) => {
-              if (editable) showSelected(editor.dispatch({ type: 'drag-start', index }));
-            }}
-            onDrag={(index, frame) => {
-              if (editor.getState().history.gestureBase === null) return;
-              showSelected(editor.dispatch({ type: 'move', index, frame, origin: 'drag' }));
-            }}
-            onDragEnd={() => editor.dispatch({ type: 'drag-end' })}
-            onDragCancel={() => showSelected(editor.dispatch({ type: 'drag-cancel' }))}
+            onDragStart={(index) => pointer?.dragStart(index)}
+            onDrag={(index, frame) => pointer?.drag(index, frame)}
+            onDragEnd={() => pointer?.dragEnd()}
+            onDragCancel={() => pointer?.dragCancel()}
           />
         </section>
 
@@ -321,7 +349,7 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
                 player={player}
                 timeline={state.history.present}
                 frames={frames}
-                onSelect={goTo}
+                onSelect={(frame) => pointer?.goTo(frame)}
               />
             ),
             ...(session.guideline && {
@@ -333,6 +361,17 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
         <KeyLegend onRun={run} />
       </div>
       {showHelp && <HelpOverlay onRun={run} onClose={() => setShowHelp(false)} />}
+      {asking === 'review' && (
+        <ReviewDialog
+          onSubmit={(reason, notes) =>
+            void finish(
+              { type: 'needs-review', reason, notes },
+              { text: `Sent ${info.id} to review.`, undo: false },
+            )
+          }
+          onCancel={() => setAsking(null)}
+        />
+      )}
     </>
   );
 }

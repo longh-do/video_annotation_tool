@@ -57,7 +57,7 @@ export function Filmstrip({ grabber, frames, anchor, boundary, onPick }: Filmstr
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => onPick(frame)}
         >
-          <Bitmap bitmap={bitmaps.get(frame)} />
+          <Picture bitmap={bitmaps.get(frame)} />
           <span>{offset(frame)}</span>
         </button>
       ))}
@@ -65,11 +65,16 @@ export function Filmstrip({ grabber, frames, anchor, boundary, onPick }: Filmstr
   );
 }
 
-function Bitmap({ bitmap }: { readonly bitmap: ImageBitmap | undefined }) {
+/** The frame once it has been grabbed; an empty box until then. */
+function Picture({ bitmap }: { readonly bitmap: ImageBitmap | undefined }) {
+  return bitmap ? <Bitmap bitmap={bitmap} /> : <span className="thumb-empty" />;
+}
+
+function Bitmap({ bitmap }: { readonly bitmap: ImageBitmap }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const element = canvas.current;
-    if (!element || !bitmap) return;
+    if (!element) return;
     element.width = bitmap.width;
     element.height = bitmap.height;
     element.getContext('2d')?.drawImage(bitmap, 0, 0);

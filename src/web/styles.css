@@ -416,7 +416,8 @@ button.check-warning {
   color: var(--muted);
 }
 
-.thumb canvas {
+.thumb canvas,
+.thumb-empty {
   width: 100%;
   aspect-ratio: 4 / 3;
   background: #000;
@@ -520,4 +521,130 @@ button.check-warning {
 .guideline-version {
   color: var(--muted);
   font-size: 11px;
+}
+
+/* Queue: position in the batch, the queue list, and messages. */
+.queue-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.queue-bar button {
+  padding: 1px 8px;
+}
+
+.warm {
+  display: none;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 72px;
+  z-index: 2;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  transform: translateX(-50%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.4);
+}
+
+/* A question over the bottom of the video: confirm with a key, or Escape. */
+.confirm {
+  position: absolute;
+  inset: auto 12px 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgb(23 26 33 / 0.95);
+  border: 1px solid var(--rough);
+  border-radius: 8px;
+}
+
+.confirm span {
+  margin-right: auto;
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(560px, 92vw);
+  max-height: 85vh;
+  overflow: auto;
+  padding: 16px 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.dialog h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.reason {
+  text-align: left;
+}
+
+.reason[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.reason .hint {
+  color: var(--muted);
+}
+
+.dialog input {
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.queue ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.queue-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 16px;
+  width: 100%;
+  margin-bottom: 4px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-current {
+  border-color: var(--accent);
+}
+
+.queue-status.status-complete {
+  color: var(--keep);
+}
+
+.queue-status.status-needs_review {
+  color: var(--rough);
+}
+
+.queue .close {
+  align-self: flex-end;
 }

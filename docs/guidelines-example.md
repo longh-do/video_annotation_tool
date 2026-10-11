@@ -15,7 +15,7 @@ This is an example of the one-page guideline a team lead writes for each batch. 
 ## Finding a boundary
 
 1. Watch at 2× and press **S** at the first touch and **D** at the release. Don't stop to be exact.
-2. When you reach the end, press **Enter** to visit each rough mark. Step with **←** and **→** to the first frame of the new state, then press **Enter** again.
+2. When you reach the end, press **Enter** to visit each rough mark and put it on the first frame of the new state: **,** and **.** move it a frame (Shift: ten), a click on a filmstrip frame puts it there, or step with **←** and **→** and press **T**. Then **Enter** accepts it and goes to the next.
 3. Judge contact in the gripper cameras (left and right), where the fingers are large and close. The start is the first frame in which a finger touches the item; the stop is the first frame in which none does. The stop frame itself is not kept.
 
 ## Cloth folding (2026-10-09)

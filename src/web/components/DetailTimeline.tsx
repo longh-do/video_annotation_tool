@@ -4,6 +4,7 @@ import { isThrough, keepSegments, type Timeline } from '../../core/timeline.ts';
 import { clock } from '../format.ts';
 import type { Player } from '../player/player.ts';
 import { usePlayer } from '../player/use-player.ts';
+import { prepareCanvas } from './canvas.ts';
 
 /** Half the visible window, in microseconds of video time. */
 const HALF_WINDOW_US = 10_000_000;
@@ -16,7 +17,7 @@ interface DetailTimelineProps {
   readonly onSeek: (frame: number) => void;
   readonly onDragStart: (index: number) => void;
   readonly onDrag: (index: number, frame: number) => void;
-  readonly onDragEnd: (index: number) => void;
+  readonly onDragEnd: () => void;
   readonly onDragCancel: () => void;
 }
 
@@ -45,7 +46,7 @@ export function DetailTimeline(props: DetailTimelineProps) {
     }
     setFrozenCenterUs(null);
     if (cancelled) props.onDragCancel();
-    else props.onDragEnd(held.index);
+    else props.onDragEnd();
   };
   const onEscape = useEffectEvent((event: KeyboardEvent) => {
     if (event.key !== 'Escape' || !drag.current) return;
@@ -86,7 +87,7 @@ export function DetailTimeline(props: DetailTimelineProps) {
     <div className="detail">
       <canvas
         ref={canvas}
-        aria-label="Twenty seconds around the playhead: click to jump"
+        title="Twenty seconds around the playhead: click to jump"
         onPointerDown={(event) =>
           onSeek(frameAt(event.clientX, event.currentTarget.getBoundingClientRect()))
         }
@@ -100,13 +101,8 @@ export function DetailTimeline(props: DetailTimelineProps) {
             // Keyed by index: a dragged boundary changes frame but keeps its index (and the
             // element keeps the pointer capture).
             key={index}
-            role="slider"
-            tabIndex={-1}
-            aria-label={label}
-            aria-valuemin={0}
-            aria-valuemax={frameCount(frames) - 1}
-            aria-valuenow={boundary.frame}
-            title={`${label} — drag to move`}
+            data-frame={boundary.frame}
+            title={`${label}: drag to move`}
             className={[
               'handle',
               `handle-${boundary.state}`,
@@ -146,15 +142,9 @@ function draw(
   centerUs: number,
   playhead: number,
 ) {
-  const width = canvas.clientWidth;
-  const height = canvas.clientHeight;
-  const ratio = window.devicePixelRatio;
-  canvas.width = Math.round(width * ratio);
-  canvas.height = Math.round(height * ratio);
-  const g = canvas.getContext('2d');
-  if (!g) return;
-  g.scale(ratio, ratio);
-  const color = (name: string) => getComputedStyle(canvas).getPropertyValue(name);
+  const ready = prepareCanvas(canvas);
+  if (!ready) return;
+  const { g, width, height, colors } = ready;
   const startUs = centerUs - HALF_WINDOW_US;
   const endUs = centerUs + HALF_WINDOW_US;
   const last = frameCount(frames) - 1;
@@ -162,9 +152,9 @@ function draw(
   const usOf = (position: number) =>
     position > last ? (frames.ptsUs[last] ?? 0) + 33_333 : (frames.ptsUs[position] ?? 0);
 
-  g.fillStyle = color('--track');
+  g.fillStyle = colors.track;
   g.fillRect(0, 0, width, height);
-  g.fillStyle = color('--keep-band');
+  g.fillStyle = colors.keepBand;
   for (const run of keepSegments(timeline)) {
     const left = x(usOf(run.start));
     const right = x(usOf(run.end));
@@ -172,7 +162,7 @@ function draw(
   }
 
   // A tick per frame, and the time at each whole second.
-  g.fillStyle = color('--muted');
+  g.fillStyle = colors.muted;
   const first = Math.max(displayedFrame(frames, 0, startUs / 1e6), 0);
   for (let k = first; k <= last && (frames.ptsUs[k] ?? 0) <= endUs; k++) {
     g.fillRect(x(frames.ptsUs[k] ?? 0), height - 6, 1, 6);
@@ -183,15 +173,18 @@ function draw(
     g.fillRect(x(s * 1e6), height - 12, 1, 12);
   }
 
+  // Only the boundaries in view: a long recording has hundreds.
   timeline.boundaries.forEach((boundary, i) => {
-    g.strokeStyle = boundary.checked ? color('--text') : color('--rough');
+    const bx = x(usOf(boundary.frame));
+    if (bx < -2 || bx > width + 2) return;
+    g.strokeStyle = boundary.checked ? colors.text : colors.rough;
     g.setLineDash(isThrough(timeline, i) ? [3, 3] : []);
     g.beginPath();
-    g.moveTo(x(usOf(boundary.frame)), 0);
-    g.lineTo(x(usOf(boundary.frame)), height);
+    g.moveTo(bx, 0);
+    g.lineTo(bx, height);
     g.stroke();
   });
   g.setLineDash([]);
-  g.fillStyle = color('--playhead');
+  g.fillStyle = colors.playhead;
   g.fillRect(x(usOf(playhead)) - 1, 0, 2, height);
 }

@@ -77,11 +77,14 @@ export class FrameClock {
     return (start + Math.min(1000, Math.floor(gap / 2))) / 1e6;
   }
 
-  /** Shows frame `k` and resolves once the browser has presented it. Paused only; retries once. */
+  /**
+   * Shows frame `k` and resolves once the browser has presented it. Paused only: it retries once,
+   * unless playback started meanwhile (a retry would yank the playing video back).
+   */
   async seekToFrame(k: number): Promise<SeekResult> {
     await this.#loaded;
     const first = await this.#seekOnce(k);
-    return first === true ? true : this.#seekOnce(k);
+    return first === true || !this.#video.paused ? first : this.#seekOnce(k);
   }
 
   dispose(): void {

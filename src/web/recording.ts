@@ -6,6 +6,7 @@
 import type { RecordingResponse, SavedAnnotation } from '../core/api-types.ts';
 import { type FrameMap, parseFramesCsv } from '../core/frame-map.ts';
 import { fetchRecording, fetchSaved, fetchText, supportsRanges } from './api.ts';
+import type { Journal, JournalEntry } from './journal.ts';
 
 export interface RecordingMedia {
   readonly info: RecordingResponse;
@@ -17,6 +18,8 @@ export interface RecordingMedia {
 
 export interface LoadedRecording extends RecordingMedia {
   readonly saved: SavedAnnotation | null;
+  /** Changes the journal kept that may not have reached the server. */
+  readonly unsaved: JournalEntry | null;
 }
 
 const media = new Map<string, Promise<RecordingMedia>>();
@@ -32,9 +35,13 @@ export function prefetchMedia(id: string): Promise<RecordingMedia> {
   return pending;
 }
 
-export async function loadRecording(id: string): Promise<LoadedRecording> {
-  const [loaded, saved] = await Promise.all([prefetchMedia(id), fetchSaved(id)]);
-  return { ...loaded, saved };
+export async function loadRecording(id: string, journal: Journal | null): Promise<LoadedRecording> {
+  const [loaded, saved, unsaved] = await Promise.all([
+    prefetchMedia(id),
+    fetchSaved(id),
+    journal?.read(id).catch(() => null) ?? null,
+  ]);
+  return { ...loaded, saved, unsaved };
 }
 
 async function fetchMedia(id: string): Promise<RecordingMedia> {
