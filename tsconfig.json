@@ -1,4 +1,10 @@
 {
   "files": [],
-  "references": [{ "path": "./src/core" }, { "path": "./tsconfig.node.json" }]
+  "references": [
+    { "path": "./src/core" },
+    { "path": "./src/web" },
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tests/e2e" },
+    { "path": "./tests/unit/web" }
+  ]
 }

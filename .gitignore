@@ -25,6 +25,7 @@ README.txt
 START-HERE.txt
 
 # Test output
+/.e2e/
 test-results/
 playwright-report/
 blob-report/

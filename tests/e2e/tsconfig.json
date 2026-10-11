@@ -1,0 +1,10 @@
+{
+  // End-to-end tests run in Node but hand functions to the browser, so they need both type sets.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "types": ["node"],
+    "tsBuildInfoFile": "../../node_modules/.tmp/e2e.tsbuildinfo"
+  },
+  "include": ["."]
+}

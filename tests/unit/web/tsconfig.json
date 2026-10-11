@@ -1,0 +1,11 @@
+{
+  // Unit tests of browser-side modules: DOM types for the modules, Node types for the tests.
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "types": ["node"],
+    "jsx": "react-jsx",
+    "tsBuildInfoFile": "../../../node_modules/.tmp/unit-web.tsbuildinfo"
+  },
+  "include": ["."]
+}
