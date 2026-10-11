@@ -300,8 +300,8 @@ export function Workspace(props: WorkspaceProps) {
           )}
           {annotation.openElsewhere && (
             <p className="banner" role="alert">
-              This recording is open in another tab, so editing is off here. To edit here, close it
-              there, then{' '}
+              This recording is open in another tab, so editing is off here. To edit here, close
+              that tab, then{' '}
               <button type="button" onClick={() => location.reload()}>
                 Reload
               </button>

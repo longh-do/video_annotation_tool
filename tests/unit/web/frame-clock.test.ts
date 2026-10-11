@@ -89,16 +89,16 @@ describe('frame clock', () => {
     expect(video.seeks).toEqual([]);
   });
 
-  test('a video that has not loaded in 15 s: seeks give up, and work once it loads', async () => {
+  test('a video that has not loaded in 15 s is reported, and a seek waiting on it goes through later', async () => {
     const clock = new FrameClock(asVideo(video), frames);
+    const loaded = settled(clock.loaded());
+    // E.g. the link a tab was opened at, in the background, where the browser holds media back.
     const seek = settled(clock.seekToFrame(2));
-    await vi.advanceTimersByTimeAsync(14_999);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(loaded.value).toBe(false);
     expect(seek.value).toBe('pending');
-    await vi.advanceTimersByTimeAsync(1);
-    expect(seek.value).toBe(null);
     video.load();
-    const next = clock.seekToFrame(2);
     await vi.advanceTimersByTimeAsync(1);
-    expect(await next).toBe(true);
+    expect(seek.value).toBe(true);
   });
 });

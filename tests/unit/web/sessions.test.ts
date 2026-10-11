@@ -213,4 +213,36 @@ describe('sessions', () => {
     expect((await sessions.open('rec-c')).fresh).toBe(false); // the one before
     expect((await sessions.open('rec-a')).fresh).toBe(true); // dropped once saved
   });
+
+  test('a recording held (on screen, or for an Undo) stays in memory however many open after it', async () => {
+    server();
+    const sessions = new Sessions(null, null);
+    const a = await sessions.open('rec-a');
+    const release = sessions.hold('rec-a');
+    await sessions.open('rec-b');
+    await sessions.open('rec-c');
+    expect((await sessions.open('rec-a')).annotation).toBe(a.annotation);
+    release();
+    await sessions.open('rec-b');
+    await sessions.open('rec-c');
+    expect((await sessions.open('rec-a')).fresh).toBe(true);
+  });
+
+  test('a recording that fails to open lets go of its lock, so another tab can edit it', async () => {
+    server();
+    const serve = globalThis.fetch;
+    let failing = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (failing && url.includes('/api/recordings/rec-x'))
+          throw new TypeError('Failed to fetch');
+        return serve(url, init);
+      }),
+    );
+    await expect(new Sessions(null, null).open('rec-x')).rejects.toThrow();
+    failing = false;
+    // Another tab of the same browser.
+    expect((await new Sessions(null, null).open('rec-x')).annotation.openElsewhere).toBe(false);
+  });
 });

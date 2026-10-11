@@ -86,11 +86,12 @@ export class FrameClock {
 
   /**
    * Shows frame `k` and resolves once the browser has presented it. Paused only: it retries once,
-   * unless playback started meanwhile (a retry would yank the playing video back). Null, without
-   * seeking, when the video has not loaded.
+   * unless playback started meanwhile (a retry would yank the playing video back). It waits for
+   * the first picture however long that takes (a tab opened in the background loads its video
+   * later); null, without seeking, if the video fails to load.
    */
   async seekToFrame(k: number): Promise<SeekResult> {
-    if (!(await this.loaded())) return null;
+    if (!(await this.#loaded)) return null;
     const first = await this.#seekOnce(k);
     return first === true || !this.#video.paused ? first : this.#seekOnce(k);
   }

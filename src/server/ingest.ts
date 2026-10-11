@@ -297,11 +297,16 @@ async function withThumbnails(
   }
 }
 
-/** Whether `dir` is missing or holds nothing but sprite sheets: thumbnails ingest wrote. */
+/**
+ * Whether `dir` is missing or holds nothing but sprite sheets: thumbnails ingest wrote. Hidden
+ * files the system adds (a Finder visit leaves .DS_Store) don't count.
+ */
 async function holdsOnlySheets(dir: string): Promise<boolean> {
   try {
     const entries = await readdir(dir, { withFileTypes: true });
-    return entries.every((entry) => entry.isFile() && SHEET_NAME.test(entry.name));
+    return entries.every(
+      (entry) => entry.isFile() && (SHEET_NAME.test(entry.name) || entry.name.startsWith('.')),
+    );
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT';
   }

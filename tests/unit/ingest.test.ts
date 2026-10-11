@@ -204,6 +204,18 @@ describe('ingest', () => {
     expect((await readdir(root)).sort()).toEqual(['catalog.json', 'r']);
   });
 
+  test("a Finder file in a thumbnail folder doesn't stop the next ingest replacing it", async () => {
+    const first = await run(async (root) => [await writeRecording(root, { id: 'r' })]);
+    await writeFile(join(first.outDir, 'r', '.DS_Store'), 'Finder');
+    const again = await ingest({
+      dataDir: join(first.outDir, '..', 'data'),
+      outDir: first.outDir,
+      tasksDir: null,
+      tools: fakeTools(first.written),
+    });
+    expect(again.catalog.recordings[0]?.thumbnails).not.toBeNull();
+  });
+
   test('keeps a recording whose thumbnails fail, with a warning', async () => {
     const root = await tempDir();
     const written = await writeRecording(join(root, 'data'), { id: 'r' });

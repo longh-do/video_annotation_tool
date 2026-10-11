@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 
 export interface ToastMessage {
   readonly text: string;
@@ -14,6 +14,8 @@ export interface ToastMessage {
    * function and returns what stops listening.
    */
   readonly closeWhen?: (close: () => void) => () => void;
+  /** Keeps what the action needs while the message shows (its recording); returns the release. */
+  readonly hold?: () => () => void;
 }
 
 const SHOWN_MS = 6000;
@@ -24,14 +26,17 @@ export function Toast({
   onClose,
 }: {
   readonly message: ToastMessage;
-  readonly onClose: () => void;
+  /** Closes this message, and only it: a newer one may have taken its place meanwhile. */
+  readonly onClose: (message: ToastMessage) => void;
 }) {
+  const close = useCallback(() => onClose(message), [message, onClose]);
   // A new message shows for the full time again.
   useEffect(() => {
-    const timer = setTimeout(onClose, SHOWN_MS);
+    const timer = setTimeout(close, SHOWN_MS);
     return () => clearTimeout(timer);
-  }, [message, onClose]);
-  useEffect(() => message.closeWhen?.(onClose), [message, onClose]);
+  }, [close]);
+  useEffect(() => message.closeWhen?.(close), [message, close]);
+  useEffect(() => message.hold?.(), [message]);
   const { action } = message;
   return (
     <div className="toast" role="status">
@@ -41,7 +46,7 @@ export function Toast({
           type="button"
           className="toast-action"
           onClick={() => {
-            onClose();
+            close();
             action.run();
           }}
         >
@@ -49,12 +54,7 @@ export function Toast({
           {action.keys && <kbd>{action.keys}</kbd>}
         </button>
       )}
-      <button
-        type="button"
-        className="toast-close"
-        aria-label="Close the message"
-        onClick={onClose}
-      >
+      <button type="button" className="toast-close" aria-label="Close the message" onClick={close}>
         ×
       </button>
     </div>

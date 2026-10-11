@@ -1,8 +1,9 @@
 /**
  * The annotations of this page, one per recording, and the one place that decides whether a kept
  * one is still current. The recording opened last and the one before it are kept (see
- * AnnotationSession; Back and Undo on a toast return there), and any with changes not saved yet;
- * the others are dropped, and reopen from the server without their undo history.
+ * AnnotationSession; Back and Undo on a toast return there), any with changes not saved yet, and
+ * any held (the one on screen, or the one a message's Undo acts on); the others are dropped, and
+ * reopen from the server without their undo history.
  *
  * One tab of the browser edits a recording at a time: the one holding its Web Lock, which alone
  * uses its journal entry. Another tab opens it read-only, so two tabs never journal, recover or
@@ -33,6 +34,8 @@ export class Sessions {
   readonly #loading = new Map<string, Promise<Opened>>();
   /** The recordings opened last, the latest last. */
   #recent: string[] = [];
+  /** How many holds each held recording has. */
+  readonly #held = new Map<string, number>();
 
   constructor(journal: Journal | null, telemetry: Telemetry | null) {
     // Without Web Locks (a page served neither from localhost nor over HTTPS) a tab can't tell
@@ -54,6 +57,22 @@ export class Sessions {
     return pending;
   }
 
+  /**
+   * Keeps a recording's annotation, and its lock, while something still acts on it: the screen
+   * that shows it, or a message's Undo. Returns the release.
+   */
+  hold(id: string): () => void {
+    this.#held.set(id, (this.#held.get(id) ?? 0) + 1);
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      const left = (this.#held.get(id) ?? 1) - 1;
+      if (left > 0) this.#held.set(id, left);
+      else this.#held.delete(id);
+    };
+  }
+
   /** Something isn't on the server yet. */
   get dirty(): boolean {
     return [...this.#kept.values()].some((annotation) => annotation.saver.dirty);
@@ -70,7 +89,14 @@ export class Sessions {
     await kept?.saver.flush();
     const editable = await this.#claim(id);
     const journal = editable ? this.#journal : null;
-    const recording = await loadRecording(id, journal);
+    let recording: LoadedRecording;
+    try {
+      recording = await loadRecording(id, journal);
+    } catch (error) {
+      // Not opened here, so another tab may edit it.
+      if (!this.#kept.has(id)) this.#letGo(id);
+      throw error;
+    }
     let opened: Opened;
     if (kept && !kept.openElsewhere && kept.saver.revision === recording.revision) {
       opened = { recording, annotation: kept, fresh: false };
@@ -96,15 +122,18 @@ export class Sessions {
   #keepRecent(id: string): void {
     this.#recent = [...this.#recent.filter((other) => other !== id), id].slice(-KEPT);
     for (const [other, annotation] of this.#kept) {
-      if (this.#recent.includes(other) || annotation.saver.dirty) continue;
+      if (this.#recent.includes(other) || this.#held.has(other) || annotation.saver.dirty) continue;
       annotation.dispose();
       this.#kept.delete(other);
     }
-    for (const [other, release] of this.#claimed) {
-      if (this.#kept.has(other) || this.#loading.has(other)) continue;
-      release();
-      this.#claimed.delete(other);
+    for (const other of this.#claimed.keys()) {
+      if (!this.#kept.has(other) && !this.#loading.has(other)) this.#letGo(other);
     }
+  }
+
+  #letGo(id: string): void {
+    this.#claimed.get(id)?.();
+    this.#claimed.delete(id);
   }
 }
 

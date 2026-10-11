@@ -62,7 +62,7 @@ On a Windows or Linux keyboard ⌘ is Ctrl. Everything also works with the mouse
 
 - Times are the reference camera's `source_ts_ns` as decimal strings (they are never JavaScript numbers anywhere in the code). Intervals are `[start, stop)`: `start_ns` is the first kept frame, `end_ns` the first frame not kept, or the last frame plus 1 ns when an interval runs to the end of the video.
 - `status` is `complete`, or `needs_review` with the reason and note in `notes`; `not_reviewed` while it is a draft (autosaved). "No useful task" is `complete` with no intervals. **Submit anyway** saves `complete` even with live marks never checked; the sidecar lists them as unchecked.
-- Beside it, `<recording_id>.meta.json` keeps what the contract doesn't: every boundary with how it was set and whether it was checked, where to resume, effort (active and wall time, edits, undos), the revision and who saved it with which version of the task guide. `annotations/.history/<recording_id>/` keeps every saved revision.
+- Beside it, `<recording_id>.meta.json` keeps what the contract doesn't: every boundary with how it was set and whether it was checked, where to resume, effort (active and wall time, edits, undos), the revision and who saved it with which version of the task guide. `annotations/.history/<recording_id>/` keeps every saved revision, and a load finishes a save that a crash cut short from it; to start a recording over, delete its two files and that folder.
 
 ## Measuring speed without losing accuracy
 

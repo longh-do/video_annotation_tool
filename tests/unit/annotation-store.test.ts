@@ -118,6 +118,30 @@ describe('AnnotationStore', () => {
     expect(await Promise.all(files.map(read))).toEqual(two);
   });
 
+  test("a recording's first save cut short after its history record is finished too", async () => {
+    const dir = await tempDir();
+    const store = new AnnotationStore(dir);
+    await store.save('rec', 0, { ...annotation, notes: 'first' }, draft, stamp);
+    await rm(join(dir, 'rec.json'));
+    await rm(join(dir, 'rec.meta.json'));
+    expect(await new AnnotationStore(dir).load('rec')).toMatchObject({
+      revision: 1,
+      annotation: { notes: 'first' },
+    });
+    expect(JSON.parse(await readFile(join(dir, 'rec.json'), 'utf8')).notes).toBe('first');
+  });
+
+  test('a contract file edited by hand is left as it is', async () => {
+    const dir = await tempDir();
+    const store = new AnnotationStore(dir);
+    await store.save('rec', 0, { ...annotation, notes: 'one' }, draft, stamp);
+    await store.save('rec', 1, { ...annotation, notes: 'two' }, draft, stamp);
+    const fixed = JSON.stringify({ ...annotation, notes: 'fixed by a lead' });
+    await writeFile(join(dir, 'rec.json'), fixed);
+    await new AnnotationStore(dir).load('rec');
+    expect(await readFile(join(dir, 'rec.json'), 'utf8')).toBe(fixed);
+  });
+
   test('rejects ids that could escape the folder', async () => {
     const store = new AnnotationStore(await tempDir());
     await expect(store.load('../etc')).rejects.toThrow(/unsafe recording id/);

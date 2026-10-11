@@ -55,11 +55,17 @@ export class AnnotationStore {
   load(id: string): Promise<SavedAnnotation | null> {
     return this.#serialize(id, async () => {
       const revision = await this.#currentRevision(id);
+      const record =
+        revision > 0 ? await readJsonFile<HistoryRecord>(this.#historyPath(id, revision)) : null;
       const sidecar = await readJsonFile<Sidecar>(this.#path(id, '.meta.json'));
-      if (sidecar && revision > 0) {
-        const record = await readJsonFile<HistoryRecord>(this.#historyPath(id, revision));
-        if (record) {
-          await this.#rollForward(id, record, sidecar);
+      if (record) {
+        // A contract file that can't be read is as good as missing: the record has it.
+        const contract = await readJsonFile<AnnotationFile>(this.#path(id, '.json')).catch(
+          () => null,
+        );
+        // With neither file, a save stopped right after its history record (the first one, say).
+        if (sidecar || !contract) {
+          await this.#rollForward(id, record, sidecar, contract);
           return { revision, ...record };
         }
       }
@@ -101,14 +107,22 @@ export class AnnotationStore {
 
   /**
    * Finishes a save that stopped after its history record (the server crashed, say): the sidecar
-   * and the contract file, in the order a save writes them, if they are behind the record.
+   * and the contract file, in the order a save writes them, where they are behind the record. A
+   * contract file that is neither missing nor the revision before was edited by hand: it stays.
    */
-  async #rollForward(id: string, record: HistoryRecord, sidecar: Sidecar): Promise<void> {
-    if (sidecar.revision !== record.sidecar.revision) {
+  async #rollForward(
+    id: string,
+    record: HistoryRecord,
+    sidecar: Sidecar | null,
+    annotation: AnnotationFile | null,
+  ): Promise<void> {
+    const { revision } = record.sidecar;
+    if (!sidecar || sidecar.revision < revision) {
       await writeAtomic(this.#path(id, '.meta.json'), record.sidecar);
     }
-    const contract = await readJsonFile(this.#path(id, '.json')).catch(() => null);
-    if (!isDeepStrictEqual(contract, record.annotation)) {
+    if (isDeepStrictEqual(annotation, record.annotation)) return;
+    const before = await readJsonFile<HistoryRecord>(this.#historyPath(id, revision - 1));
+    if (!annotation || isDeepStrictEqual(annotation, before?.annotation)) {
       await writeAtomic(this.#path(id, '.json'), record.annotation);
     }
   }

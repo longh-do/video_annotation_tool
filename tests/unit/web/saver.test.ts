@@ -283,4 +283,17 @@ describe('Saver', () => {
     await vi.advanceTimersByTimeAsync(300);
     expect(alone.status).toEqual({ kind: 'offline', serverError: 'bad', kept: false });
   });
+
+  test("while saves fail, the newest change is in the journal, a held key's too", async () => {
+    server('offline', 'offline');
+    const unsaved = journal();
+    const saver = new Saver('rec', 0, unsaved);
+    saver.save(payload('pressed'));
+    await vi.advanceTimersByTimeAsync(300);
+    // A held key's repeat waits behind the save that got no answer.
+    saver.save(payload('held'), false);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(unsaved.entry?.payload.annotation.notes).toBe('held');
+    expect(saver.status).toMatchObject({ kind: 'offline', kept: true });
+  });
 });

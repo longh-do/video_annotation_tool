@@ -185,6 +185,8 @@ export class Saver {
 
   /** No answer, or one that says nothing about the change: it is kept and sent again later. */
   #retryLater(error: unknown): null {
+    // What waits behind it must be kept now too: a held key's repeats are journaled when sent.
+    if (this.#pending && !this.#pending.journaled) this.#write(this.#pending);
     const serverError = error instanceof ApiError ? error.message : null;
     this.#setStatus({ kind: 'offline', serverError, kept: this.#journal !== null });
     this.#timer = setTimeout(() => void this.flush(), this.#retryMs);

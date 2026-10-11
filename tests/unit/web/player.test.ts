@@ -69,12 +69,16 @@ describe('player', () => {
     expect(player.snapshot).toMatchObject({ playing: false, seekFailed: true });
   });
 
-  test('a video that has not loaded in 15 s turns marking off', async () => {
+  test('a video that has not loaded in 15 s turns marking off until it loads and a seek lands', async () => {
     const player = new Player(asVideo(video), frames, 2);
+    player.seek(2);
     await vi.advanceTimersByTimeAsync(14_999);
     expect(player.snapshot.seekFailed).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(player.snapshot.seekFailed).toBe(true);
+    video.load();
+    await vi.advanceTimersByTimeAsync(5);
+    expect(player.snapshot).toMatchObject({ seekFailed: false, frame: 2 });
   });
 
   test('after the video breaks, playing does not turn marking back on', () => {

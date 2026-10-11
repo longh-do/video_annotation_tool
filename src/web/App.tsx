@@ -138,7 +138,13 @@ export function App() {
     };
   }, [next]);
 
-  const closeToast = useCallback(() => setToast(null), []);
+  // The recording on screen stays in memory, and stays this tab's, whatever opens meanwhile.
+  useEffect(() => (current ? sessions.current?.hold(current) : undefined), [current]);
+
+  const closeToast = useCallback(
+    (message: ToastMessage) => setToast((shown) => (shown === message ? null : shown)),
+    [],
+  );
 
   if (error) {
     return (
@@ -169,6 +175,8 @@ export function App() {
       }
       setToast({
         text,
+        // Its Undo or Back returns to this recording, as it was: keep it until the message goes.
+        hold: () => sessions.current?.hold(current) ?? (() => {}),
         action: undo
           ? {
               label: 'Undo',
