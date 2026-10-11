@@ -10,7 +10,7 @@ import { tempDir, type WrittenRecording, writeRecording } from './fixtures.ts';
 function fakeTools(recordings: WrittenRecording[]): MediaTools {
   const pts = new Map(recordings.flatMap((r) => [...r.pts]));
   return {
-    probe: async (video) => ({ timeBase: '1/1000000', bFrames: false, pts: pts.get(video) ?? [] }),
+    probe: async (video) => ({ timeBase: '1/1000000', pts: pts.get(video) ?? [] }),
     sprites: async (video, outDir) => {
       const sheet = join(outDir, 'thumbs-01.jpg');
       await writeFile(sheet, 'jpeg');
@@ -19,17 +19,22 @@ function fakeTools(recordings: WrittenRecording[]): MediaTools {
   };
 }
 
-async function run(setup: (root: string) => Promise<WrittenRecording[]>, withTools = true) {
+/** Ingests what `setup` writes into a new data folder, with the output folder beside it. */
+async function run(
+  setup: (dataDir: string, outDir: string) => Promise<WrittenRecording[]>,
+  withTools = true,
+) {
   const root = await tempDir();
-  const written = await setup(root);
+  const dataDir = join(root, 'data');
   const outDir = join(root, 'derived');
+  const written = await setup(dataDir, outDir);
   const result = await ingest({
-    dataDir: root,
+    dataDir,
     outDir,
     tasksDir: null,
     tools: withTools ? fakeTools(written) : null,
   });
-  return { ...result, root, outDir, written };
+  return { ...result, outDir, written };
 }
 
 describe('ingest', () => {
@@ -115,12 +120,12 @@ describe('ingest', () => {
   });
 
   test('rejects a recording id that is not a plain name, without touching other folders', async () => {
-    const { catalog, inspections, outDir } = await run(async (root) => {
+    const { catalog, inspections, outDir } = await run(async (root, out) => {
       const r = await writeRecording(root, { id: 'r' });
       const manifest = JSON.parse(await readFile(r.manifestPath, 'utf8'));
       await writeFile(r.manifestPath, JSON.stringify({ ...manifest, recording_id: '../victim' }));
-      await mkdir(join(root, 'derived', '..', 'victim'), { recursive: true });
-      await writeFile(join(root, 'victim', 'keep.txt'), 'still here');
+      await mkdir(join(out, '..', 'victim'), { recursive: true });
+      await writeFile(join(out, '..', 'victim', 'keep.txt'), 'still here');
       return [r];
     });
     expect(catalog.recordings).toEqual([]);
@@ -168,12 +173,43 @@ describe('ingest', () => {
     expect(await readdir(join(outDir, 'same'))).toEqual(['thumbs-01.jpg']);
   });
 
-  test('keeps a recording whose thumbnails fail, with a warning', async () => {
+  test('refuses an output folder inside the data folder, and writes nothing there', async () => {
+    const root = await tempDir();
+    // As in the downloads: the recording's own folder inside a numbered one.
+    const download = join(root, '01 - Short example');
+    const written = await writeRecording(download, { id: 'r' });
+    await expect(
+      ingest({ dataDir: root, outDir: download, tasksDir: null, tools: fakeTools([written]) }),
+    ).rejects.toThrow(`the output folder ${download} is inside the data folder ${root}`);
+    expect(await readdir(download)).toEqual(['r']);
+    expect(JSON.parse(await readFile(written.manifestPath, 'utf8')).recording_id).toBe('r');
+  });
+
+  test('replaces its own thumbnail folders only, never one that holds anything else', async () => {
+    // The data folder is the recording's own folder, inside the output folder: its thumbnail
+    // folder, <out>/r, is the recording itself.
     const root = await tempDir();
     const written = await writeRecording(root, { id: 'r' });
+    const { catalog } = await ingest({
+      dataDir: join(root, 'r'),
+      outDir: root,
+      tasksDir: null,
+      tools: fakeTools([written]),
+    });
+    expect(catalog.recordings[0]).toMatchObject({
+      thumbnails: null,
+      warnings: [`no thumbnails: ${join(root, 'r')} holds more than thumbnails; left it alone`],
+    });
+    expect(JSON.parse(await readFile(written.manifestPath, 'utf8')).recording_id).toBe('r');
+    expect((await readdir(root)).sort()).toEqual(['catalog.json', 'r']);
+  });
+
+  test('keeps a recording whose thumbnails fail, with a warning', async () => {
+    const root = await tempDir();
+    const written = await writeRecording(join(root, 'data'), { id: 'r' });
     const tools = fakeTools([written]);
     const { catalog } = await ingest({
-      dataDir: root,
+      dataDir: join(root, 'data'),
       outDir: join(root, 'derived'),
       tasksDir: null,
       tools: { ...tools, sprites: async () => Promise.reject(new Error('ffmpeg crashed')) },

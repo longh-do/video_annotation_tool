@@ -31,6 +31,9 @@ export interface MediaTools {
 
 export const SPRITE_GRID = 20;
 
+/** The name of every sprite sheet `sprites` writes. */
+export const SHEET_NAME = /^thumbs-\d+\.jpg$/;
+
 export async function findMediaTools(): Promise<MediaTools | null> {
   try {
     await Promise.all([run('ffprobe', ['-version']), run('ffmpeg', ['-version'])]);
@@ -74,7 +77,7 @@ async function sprites(videoPath: string, outDir: string, tileWidth: number): Pr
     ],
     BIG_OUTPUT,
   );
-  const sheets = (await readdir(outDir)).filter((name) => /^thumbs-\d+\.jpg$/.test(name)).sort();
+  const sheets = (await readdir(outDir)).filter((name) => SHEET_NAME.test(name)).sort();
   return { sheetPaths: sheets.map((name) => join(outDir, name)), pts: integers(frames.stdout) };
 }
 

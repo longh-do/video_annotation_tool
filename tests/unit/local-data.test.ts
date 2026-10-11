@@ -7,7 +7,7 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test } from 'vitest';
 import { keepIntervals } from '../../src/core/annotation.ts';
 import { frameCount, parseFramesCsv } from '../../src/core/frame-map.ts';
 import { emptyTimeline, setStateFrom } from '../../src/core/timeline.ts';
@@ -18,16 +18,19 @@ import { tempDir } from './fixtures.ts';
 const root = process.env.RECORDINGS_DIR;
 
 describe.runIf(root !== undefined && existsSync(root))('real recordings', () => {
-  const ingested = (async () =>
-    ingest({
+  let ingested: Awaited<ReturnType<typeof ingest>>;
+  // In a hook, so that nothing runs when the suite is skipped.
+  beforeAll(async () => {
+    ingested = await ingest({
       dataDir: root ?? '',
       outDir: join(await tempDir(), 'derived'),
       tasksDir: null,
       tools: await findMediaTools(),
-    }))();
+    });
+  }, 120_000);
 
-  test('all four pass ingest, in both folder layouts, with the template mix-ups flagged', async () => {
-    const { catalog, inspections } = await ingested;
+  test('all four pass ingest, in both folder layouts, with the template mix-ups flagged', () => {
+    const { catalog, inspections } = ingested;
     expect(inspections.flatMap((i) => i.errors)).toEqual([]);
     expect(catalog.recordings.map((r) => r.id)).toEqual([
       '2026-10-09--09-40-56',
@@ -41,11 +44,10 @@ describe.runIf(root !== undefined && existsSync(root))('real recordings', () => 
       true,
       false,
     ]);
-  }, 60_000);
+  });
 
   test('the worked example exports exactly', async () => {
-    const { catalog } = await ingested;
-    const head = catalog.recordings[0]?.cameras[0];
+    const head = ingested.catalog.recordings[0]?.cameras[0];
     const frames = parseFramesCsv(await readFile(head?.framesPath ?? '', 'utf8'));
     let t = emptyTimeline(frameCount(frames));
     t = setStateFrom(t, 60, 'keep', 'paused');
@@ -53,5 +55,5 @@ describe.runIf(root !== undefined && existsSync(root))('real recordings', () => 
     expect(keepIntervals(t, frames)).toEqual([
       { start_ns: '3018566655052', end_ns: '3093598123682' },
     ]);
-  }, 60_000);
+  });
 });

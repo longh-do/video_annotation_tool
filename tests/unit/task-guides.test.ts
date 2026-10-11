@@ -3,7 +3,12 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type { TaskGuide } from '../../src/server/catalog.ts';
-import { guideMarkdown, readTaskGuides, tasksCovering } from '../../src/server/task-guides.ts';
+import {
+  guideMarkdown,
+  guideVersion,
+  readTaskGuides,
+  tasksCovering,
+} from '../../src/server/task-guides.ts';
 import { tempDir } from './fixtures.ts';
 
 /** Writes the files into a new folder and reads the guides in it. */
@@ -14,7 +19,7 @@ async function read(files: Record<string, string>) {
 }
 
 describe('task guides', () => {
-  test('reads the patterns, the first heading as title, and a hash of the whole file', async () => {
+  test('reads the patterns and the first heading as title', async () => {
     const text =
       '---\nrecordings: kitchen-*, lab-2-*  lab-3,lab-4\n---\n\n# Stack the cups\n\nKeep…\n';
     const { dir, tasks, warnings } = await read({ 'stack-cups.md': text });
@@ -22,9 +27,15 @@ describe('task guides', () => {
     expect(tasks.get('stack-cups')).toEqual({
       path: join(dir, 'stack-cups.md'),
       title: 'Stack the cups',
-      version: `sha256:${createHash('sha256').update(text).digest('hex').slice(0, 12)}`,
       recordings: ['kitchen-*', 'lab-2-*', 'lab-3', 'lab-4'],
     });
+  });
+
+  test('versions a guide by a hash of the whole file', () => {
+    const text = '---\nrecordings: a\n---\n# Cups\n';
+    const hash = createHash('sha256').update(text).digest('hex').slice(0, 12);
+    expect(guideVersion(text)).toBe(`sha256:${hash}`);
+    expect(guideVersion(`${text} `)).not.toBe(guideVersion(text));
   });
 
   test('takes the file name as title when the guide has no heading', async () => {
@@ -67,12 +78,7 @@ describe('task guides', () => {
   });
 
   test('matches * against any run of characters and everything else literally', () => {
-    const guide = (recordings: string[]): TaskGuide => ({
-      path: '',
-      title: '',
-      version: '',
-      recordings,
-    });
+    const guide = (recordings: string[]): TaskGuide => ({ path: '', title: '', recordings });
     const tasks = new Map([
       ['cups', guide(['cups-*'])],
       ['ones', guide(['*-1', 'x.y'])],

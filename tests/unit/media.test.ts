@@ -62,6 +62,17 @@ describe('sendFile', () => {
     expect(res.headers.get('content-range')).toBe('bytes */10');
   });
 
+  test('answers 304 while the browser holds the current version, even for a range', async () => {
+    const etag = (await fetch(base, { method: 'HEAD' })).headers.get('etag') ?? '';
+    expect(etag).toMatch(/^W\/"10-\d+"$/);
+    for (const header of [etag, `"other", ${etag.slice(2)}`]) {
+      const res = await fetch(base, { headers: { 'If-None-Match': header, Range: 'bytes=0-1' } });
+      expect(res.status).toBe(304);
+      expect(await res.text()).toBe('');
+    }
+    expect((await fetch(base, { headers: { 'If-None-Match': 'W/"10-0"' } })).status).toBe(200);
+  });
+
   test('answers HEAD with headers only', async () => {
     const res = await fetch(base, { method: 'HEAD', headers: { Range: 'bytes=0-0' } });
     expect(res.status).toBe(206);

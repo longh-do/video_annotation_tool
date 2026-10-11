@@ -44,8 +44,14 @@ export function isLocalHost(host: string | undefined): boolean {
   return name === '127.0.0.1' || name === 'localhost';
 }
 
-/** Reads a JSON request body, refusing anything over `limitBytes`. */
+/**
+ * Reads a JSON request body, refusing anything over `limitBytes`. The body must be sent as JSON: a
+ * page on another site can have the browser send text/plain here without asking, but not JSON.
+ */
 export async function readJson(req: IncomingMessage, limitBytes = 2_000_000): Promise<unknown> {
+  if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] ?? '')) {
+    throw new HttpError(415, 'send the body with Content-Type: application/json');
+  }
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {

@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { createServer, request } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { keepIntervals, sidecarBoundaries } from '../../src/core/annotation.ts';
 import type {
   ErrorBody,
@@ -15,56 +15,70 @@ import type {
 import { parseFramesCsv } from '../../src/core/frame-map.ts';
 import { emptyTimeline, setStateFrom } from '../../src/core/timeline.ts';
 import { AnnotationStore } from '../../src/server/annotations.ts';
-import { createApi } from '../../src/server/api.ts';
+import { createApi, type Handler } from '../../src/server/api.ts';
+import type { Catalog } from '../../src/server/catalog.ts';
 import { ingest } from '../../src/server/ingest.ts';
+import { guideVersion } from '../../src/server/task-guides.ts';
 import { TelemetryLog } from '../../src/server/telemetry.ts';
 import { tempDir, writeRecording } from './fixtures.ts';
 
+/** The task guide for rec-a and rec-b; rec-c has no task. */
+const GUIDE =
+  '---\nrecordings: rec-a, rec-b\n---\n\n# Stack the cups\n\nKeep from the first touch.\n';
+const taskVersion = guideVersion(GUIDE);
+
 let root = '';
+let data = '';
 let base = '';
-let taskVersion = '';
-const server = createServer();
+let catalog: Catalog;
+/** The API under test, with this test's own annotations folder and telemetry file. */
+let api: Handler;
+let annotations = '';
+let telemetry = '';
+// As in main.ts: anything the API doesn't turn into a response is a 500.
+const server = createServer((req, res) => {
+  api(req, res)
+    .then((handled) => handled || res.writeHead(404).end())
+    .catch(() => res.writeHead(500).end());
+});
 
 beforeAll(async () => {
   root = await tempDir();
-  await writeRecording(root, { id: 'rec-a' });
-  await writeRecording(root, { id: 'rec-b', layout: 'split' });
-  await writeRecording(root, { id: 'rec-c' });
-  // A task guide for rec-a and rec-b; rec-c has no task.
+  data = join(root, 'data');
+  await writeRecording(data, { id: 'rec-a' });
+  await writeRecording(data, { id: 'rec-b', layout: 'split' });
+  await writeRecording(data, { id: 'rec-c' });
   const tasksDir = join(root, 'tasks');
   await mkdir(tasksDir);
-  await writeFile(
-    join(tasksDir, 'stack-cups.md'),
-    '---\nrecordings: rec-a, rec-b\n---\n\n# Stack the cups\n\nKeep from the first touch.\n',
-  );
-  const { catalog } = await ingest({
-    dataDir: root,
+  await writeFile(join(tasksDir, 'stack-cups.md'), GUIDE);
+  ({ catalog } = await ingest({
+    dataDir: data,
     outDir: join(root, 'derived'),
     tasksDir,
     tools: null,
-  });
-  taskVersion = catalog.tasks['stack-cups']?.version ?? '';
-  const api = createApi({
-    catalog,
-    store: new AnnotationStore(join(root, 'annotations')),
-    telemetry: new TelemetryLog(join(root, 'telemetry', 'events.jsonl')),
-    annotatorId: 'tester',
-    toolVersion: '0.0.0-test',
-  });
-  // As in main.ts: anything the API doesn't turn into a response is a 500.
-  server.on('request', (req, res) => {
-    api(req, res)
-      .then((handled) => handled || res.writeHead(404).end())
-      .catch(() => res.writeHead(500).end());
-  });
+  }));
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 afterAll(() => new Promise<void>((done) => server.close(() => done())));
 
+// Every test starts with nothing saved and no telemetry, whatever ran before it.
+beforeEach(async () => {
+  const state = await tempDir();
+  annotations = join(state, 'annotations');
+  telemetry = join(state, 'events.jsonl');
+  api = createApi({
+    catalog,
+    store: new AnnotationStore(annotations),
+    telemetry: new TelemetryLog(telemetry),
+    annotatorId: 'tester',
+    toolVersion: '0.0.0-test',
+  });
+});
+
 /** A valid save body for rec-a (or rec-c): keep frames 5–20, the second mark still unchecked. */
 async function body(status = 'not_reviewed', id = 'rec-a') {
-  const frames = parseFramesCsv(await readFile(join(root, id, 'head-frames.csv'), 'utf8'));
+  const frames = parseFramesCsv(await readFile(join(data, id, 'head-frames.csv'), 'utf8'));
   let t = emptyTimeline(50);
   t = setStateFrom(t, 5, 'keep', 'paused');
   t = setStateFrom(t, 20, 'cut', 'live');
@@ -92,7 +106,17 @@ const json = async <T>(res: Response | Promise<Response>) => (await (await res).
 const put = (revision: string | null, payload: unknown, id = 'rec-a') =>
   fetch(`${base}/api/annotations/${id}`, {
     method: 'PUT',
-    headers: revision === null ? {} : { 'If-Match': revision },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(revision === null ? {} : { 'If-Match': revision }),
+    },
+    body: JSON.stringify(payload),
+  });
+
+const postEvents = (payload: unknown, contentType = 'application/json') =>
+  fetch(`${base}/api/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': contentType },
     body: JSON.stringify(payload),
   });
 
@@ -148,10 +172,25 @@ describe('API', () => {
     );
     expect((await fetch(`${base}/media/rec-b/manifest.json`)).status).toBe(404);
     // A real file next to the recording, reached by an encoded "../": never served.
-    await writeFile(join(root, 'rec-b', 'secret.txt'), 'secret');
+    await writeFile(join(data, 'rec-b', 'secret.txt'), 'secret');
     const outside = await fetch(`${base}/media/rec-b/videos%2F..%2F..%2Fsecret.txt`);
     expect(outside.status).toBe(404);
     expect(await outside.text()).not.toBe('secret');
+  });
+
+  test('lets the browser keep a frames CSV, checking each time that it is current', async () => {
+    const url = `${base}/media/rec-b/head-frames.csv`;
+    const first = await fetch(url);
+    expect(first.headers.get('cache-control')).toBe('no-cache');
+    const etag = first.headers.get('etag') ?? '';
+    expect(etag).not.toBe('');
+    await first.text();
+    const again = await fetch(url, { headers: { 'If-None-Match': etag } });
+    expect(again.status).toBe(304);
+    expect(await again.text()).toBe('');
+    const changed = await fetch(url, { headers: { 'If-None-Match': 'W/"1-2"' } });
+    expect(changed.status).toBe(200);
+    expect(changed.headers.get('etag')).toBe(etag);
   });
 
   test('saves with optimistic concurrency: a stale revision gets 412', async () => {
@@ -179,6 +218,40 @@ describe('API', () => {
 
     const queue = await json<QueueResponse>(fetch(`${base}/api/queue`));
     expect(queue.recordings[0]).toMatchObject({ status: 'complete', keepIntervals: 1 });
+  });
+
+  test('a bad annotation file is named, and every other recording still opens', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((await put('"0"', await body('complete', 'rec-c'), 'rec-c')).status).toBe(200);
+      // Files written by hand: one is not JSON, the other belongs to another recording.
+      await writeFile(join(annotations, 'rec-a.json'), '{ "recording_id": "rec-a",');
+      const other = (await body('complete', 'rec-c')).annotation;
+      await writeFile(join(annotations, 'rec-b.json'), JSON.stringify(other));
+
+      // Listed as needing review, so the app never opens them by itself.
+      const queue = await fetch(`${base}/api/queue`);
+      expect(queue.status).toBe(200);
+      const statuses = (await json<QueueResponse>(queue)).recordings.map((r) => r.status);
+      expect(statuses).toEqual(['needs_review', 'needs_review', 'complete']);
+      expect(warn.mock.calls.map(([line]) => String(line)).sort()).toEqual([
+        expect.stringMatching(
+          /^! the saved annotation of rec-a is not valid JSON: .+; listed as needing review$/,
+        ),
+        '! the saved annotation of rec-b breaks the contract: recording_id must be "rec-b"; ' +
+          'listed as needing review',
+      ]);
+
+      const broken = await fetch(`${base}/api/annotations/rec-b`);
+      expect(broken.status).toBe(500);
+      expect(await json<ErrorBody>(broken)).toMatchObject({
+        problems: ['recording_id must be "rec-b"'],
+      });
+      expect((await fetch(`${base}/api/annotations/rec-a`)).status).toBe(500);
+      expect((await fetch(`${base}/api/annotations/rec-c`)).status).toBe(200);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('an edited guide shows at once, and saves are stamped with its new version', async () => {
@@ -255,20 +328,12 @@ describe('API', () => {
   });
 
   test('recovers when a frames CSV was briefly unreadable', async () => {
-    const csv = join(root, 'rec-b', 'annotation-data', 'head-frames.csv');
+    const csv = join(data, 'rec-b', 'annotation-data', 'head-frames.csv');
     await rename(csv, `${csv}.away`);
-    const failed = await fetch(`${base}/api/annotations/rec-b`, {
-      method: 'PUT',
-      headers: { 'If-Match': '"0"' },
-      body: '{}',
-    }).catch(() => null);
+    const failed = await put('"0"', {}, 'rec-b').catch(() => null);
     expect(failed?.status).not.toBe(200);
     await rename(`${csv}.away`, csv);
-    const retry = await fetch(`${base}/api/annotations/rec-b`, {
-      method: 'PUT',
-      headers: { 'If-Match': '"0"' },
-      body: '{}',
-    });
+    const retry = await put('"0"', {}, 'rec-b');
     expect(retry.status).toBe(400); // read the CSV this time, then refused the empty body
   });
 
@@ -284,28 +349,28 @@ describe('API', () => {
   });
 
   test('appends telemetry events', async () => {
-    const res = await fetch(`${base}/api/events`, {
-      method: 'POST',
-      body: JSON.stringify([{ event: 'task_opened', recording_id: 'rec-a' }]),
-    });
+    const res = await postEvents([{ event: 'task_opened', recording_id: 'rec-a' }]);
     expect(res.status).toBe(204);
-    const lines = (await readFile(join(root, 'telemetry', 'events.jsonl'), 'utf8'))
-      .trim()
-      .split('\n');
+    const lines = (await readFile(telemetry, 'utf8')).trim().split('\n');
     const last = JSON.parse(lines.at(-1)!);
     expect(last).toMatchObject({ event: 'task_opened', recording_id: 'rec-a' });
     expect(Math.abs(last.received_at_ms - Date.now())).toBeLessThan(60_000);
     const tooMany = Array.from({ length: 1001 }, () => ({ event: 'x' }));
-    const flood = await fetch(`${base}/api/events`, {
-      method: 'POST',
-      body: JSON.stringify(tooMany),
+    expect((await postEvents(tooMany)).status).toBe(400);
+    expect((await postEvents({ event: 'x' })).status).toBe(400);
+  });
+
+  test('refuses a body not sent as JSON: other sites can send text/plain unasked', async () => {
+    const forged = await postEvents([{ event: 'task_opened' }], 'text/plain;charset=UTF-8');
+    expect(forged.status).toBe(415);
+    const save = await fetch(`${base}/api/annotations/rec-a`, {
+      method: 'PUT',
+      headers: { 'If-Match': '"0"' },
+      body: JSON.stringify(await body()),
     });
-    expect(flood.status).toBe(400);
-    const bad = await fetch(`${base}/api/events`, {
-      method: 'POST',
-      body: JSON.stringify({ event: 'x' }),
-    });
-    expect(bad.status).toBe(400);
+    expect(save.status).toBe(415);
+    expect(await readFile(telemetry, 'utf8').catch(() => 'none')).toBe('none');
+    expect((await postEvents([], 'application/json; charset=utf-8')).status).toBe(204);
   });
 
   test('answers unknown routes and wrong methods', async () => {

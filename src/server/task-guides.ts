@@ -89,7 +89,7 @@ function parseTaskGuide(
     return { guide: null, warnings: [...warnings, 'its header names no recordings; skipped it'] };
   }
   const title = guideTitle(text) ?? basename(path);
-  return { guide: { path, title, version: guideVersion(text), recordings }, warnings };
+  return { guide: { path, title, recordings }, warnings };
 }
 
 /**

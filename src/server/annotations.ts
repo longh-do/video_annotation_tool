@@ -9,11 +9,13 @@
  * an older one is refused, so a second tab can never silently overwrite the first. Every file is
  * written to a temporary name, flushed and renamed into place. A revision's history record is
  * written first and holds both files, so it is what loads read: a crash between the later writes
- * can't pair one revision's contract file with another's sidecar.
+ * can't pair one revision's contract file with another's sidecar, and the next load finishes the
+ * save by rewriting the files that are behind the record.
  */
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readdir, readFile, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import type { AnnotationFile, Sidecar, SidecarDraft } from '../core/annotation.ts';
 import type { SavedAnnotation } from '../core/api-types.ts';
 import { isSafeRecordingId } from './catalog.ts';
@@ -56,7 +58,10 @@ export class AnnotationStore {
       const sidecar = await readJsonFile<Sidecar>(this.#path(id, '.meta.json'));
       if (sidecar && revision > 0) {
         const record = await readJsonFile<HistoryRecord>(this.#historyPath(id, revision));
-        if (record) return { revision, ...record };
+        if (record) {
+          await this.#rollForward(id, record, sidecar);
+          return { revision, ...record };
+        }
       }
       const annotation = await readJsonFile<AnnotationFile>(this.#path(id, '.json'));
       return annotation && { revision, annotation, sidecar: null };
@@ -92,6 +97,20 @@ export class AnnotationStore {
       await writeAtomic(this.#path(id, '.json'), annotation);
       return sidecar;
     });
+  }
+
+  /**
+   * Finishes a save that stopped after its history record (the server crashed, say): the sidecar
+   * and the contract file, in the order a save writes them, if they are behind the record.
+   */
+  async #rollForward(id: string, record: HistoryRecord, sidecar: Sidecar): Promise<void> {
+    if (sidecar.revision !== record.sidecar.revision) {
+      await writeAtomic(this.#path(id, '.meta.json'), record.sidecar);
+    }
+    const contract = await readJsonFile(this.#path(id, '.json')).catch(() => null);
+    if (!isDeepStrictEqual(contract, record.annotation)) {
+      await writeAtomic(this.#path(id, '.json'), record.annotation);
+    }
   }
 
   /** The newest revision in the history; it outlives a deleted or replaced sidecar. */
@@ -145,7 +164,9 @@ async function writeAtomic(path: string, value: unknown): Promise<void> {
     await file.close();
   }
   await rename(temp, path);
-  // Flush the directory too, so the rename itself survives a crash.
+  // Flush the directory too, so the rename itself survives a crash. Windows can't open a folder
+  // to flush it, so there the rename is as durable as the file system makes it.
+  if (process.platform === 'win32') return;
   const dir = await open(dirname(path), 'r');
   try {
     await dir.sync();

@@ -3,8 +3,9 @@
  *
  *   GET  /api/queue                 recordings in queue order with their save status
  *   GET  /api/recordings/:id        cameras, media URLs, thumbnails, task
- *   GET  /api/tasks/:id             a task's guide as it is now: title, version, markdown (no header)
- *   GET  /api/annotations/:id      the saved annotation and sidecar; ETag = revision
+ *   GET  /api/tasks/:id             a task's guide as it is now: title, version, Markdown
+ *                                   (without its header)
+ *   GET  /api/annotations/:id       the saved annotation and sidecar; ETag = revision
  *   PUT  /api/annotations/:id       save; If-Match must name the revision that was edited
  *   POST /api/events                append a batch of telemetry events
  *   GET  /media/:id/<file>          videos, frames CSVs and thumbnail sheets, with byte ranges
@@ -28,6 +29,7 @@ import type {
   GuideResponse,
   QueueResponse,
   RecordingResponse,
+  SavedAnnotation,
   SaveResult,
 } from '../core/api-types.ts';
 import { type FrameMap, parseFramesCsv } from '../core/frame-map.ts';
@@ -89,17 +91,48 @@ export function createApi(options: ApiOptions): Handler {
     return frames;
   };
 
+  /**
+   * The saved annotation, checked like a save. A file that fails (one written by hand, say) is
+   * never sent to the browser: it is an error that says what is wrong with it.
+   */
+  const savedAnnotation = async (r: Recording): Promise<SavedAnnotation | null> => {
+    const saved = await store.load(r.id).catch((error: unknown) => {
+      if (!(error instanceof SyntaxError)) throw error;
+      throw new HttpError(
+        500,
+        `the saved annotation of ${r.id} is not valid JSON: ${error.message}`,
+      );
+    });
+    if (!saved) return null;
+    const frames = await referenceFrames(r);
+    const reference = { recordingId: r.id, referenceVideo: referenceCamera(r).video, frames };
+    const problems = validateAnnotationFile(saved.annotation, reference);
+    if (problems.length > 0) {
+      const error = `the saved annotation of ${r.id} breaks the contract: ${problems.join('; ')}`;
+      throw new HttpError(500, error, { error, problems });
+    }
+    return saved;
+  };
+
   const queue: Route = async (_req, res) => {
     const items = await Promise.all(
       catalog.recordings.map(async (recording) => {
-        const saved = await store.load(recording.id);
-        return {
-          id: recording.id,
-          durationS: recording.durationS,
-          status: saved?.annotation.status ?? 'not_reviewed',
-          keepIntervals: saved?.annotation.keep_intervals.length ?? 0,
-          savedAt: saved?.sidecar?.saved_at ?? null,
-        };
+        const item = { id: recording.id, durationS: recording.durationS };
+        try {
+          const saved = await savedAnnotation(recording);
+          return {
+            ...item,
+            status: saved?.annotation.status ?? 'not_reviewed',
+            keepIntervals: saved?.annotation.keep_intervals.length ?? 0,
+            savedAt: saved?.sidecar?.saved_at ?? null,
+          };
+        } catch (error) {
+          // One bad file must not keep the other recordings from opening. Listed as needing
+          // review, it is never opened by itself, and opening it says what is wrong.
+          const problem = error instanceof Error ? error.message : String(error);
+          console.warn(`! ${problem}; listed as needing review`);
+          return { ...item, status: 'needs_review' as const, keepIntervals: 0, savedAt: null };
+        }
       }),
     );
     const session = { annotatorId: options.annotatorId, toolVersion: options.toolVersion };
@@ -142,7 +175,7 @@ export function createApi(options: ApiOptions): Handler {
 
   const getAnnotation: Route = async (_req, res, [id]) => {
     const r = recordingOf(id);
-    const saved = await store.load(r.id);
+    const saved = await savedAnnotation(r);
     if (!saved) {
       const revision = await store.revision(r.id);
       return sendJson(res, 404, { revision }, { ETag: `"${revision}"` });
@@ -210,7 +243,9 @@ export function createApi(options: ApiOptions): Handler {
     if (camera) {
       const isVideo = camera.video === file;
       path = isVideo ? camera.videoPath : camera.framesPath;
-      cache = isVideo ? cache : 'no-store';
+      // Every saved timestamp comes from a frames CSV, so the browser checks that its copy is
+      // current each time (a 304 when it is) instead of trusting it for an hour.
+      cache = isVideo ? cache : 'no-cache';
     }
     if (!path) throw new HttpError(404, `recording ${r.id} has no file ${file}`);
     try {

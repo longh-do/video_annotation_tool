@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, test } from 'vitest';
 import type { AnnotationFile, Status } from '../../src/core/annotation.ts';
 import { frameNs, parseFramesCsv, stopNs } from '../../src/core/frame-map.ts';
@@ -73,7 +75,17 @@ async function setUp() {
     });
   const lines = [accepted('a1', 2000), accepted('a1', 4000), accepted('lead', 9000)];
   await writeFile(telemetry, [...lines, '{"event":"playback"}', '{"event":"bound', ''].join('\n'));
-  return { catalog, gold, test, telemetry };
+  const catalogPath = join(root, 'derived', 'catalog.json');
+  return { catalog, catalogPath, gold, test, telemetry, contract };
+}
+
+/** Runs `pnpm score`; resolves with its exit code and what it printed. */
+function score(...args: string[]) {
+  const script = join(import.meta.dirname, '..', '..', 'scripts', 'score.ts');
+  return promisify(execFile)(process.execPath, [script, ...args]).then(
+    ({ stdout }) => ({ code: 0, stdout }),
+    (error: { code: number; stdout: string }) => ({ code: error.code, stdout: error.stdout }),
+  );
 }
 
 describe('score report', () => {
@@ -84,6 +96,7 @@ describe('score report', () => {
       { id: 'rec-b', reason: 'not reviewed' },
       { id: 'rec-c', reason: 'no annotation' },
     ]);
+    expect(report.invalid).toEqual([]);
     const [a] = report.recordings;
     expect(a?.score).toMatchObject({
       goldIntervals: 2,
@@ -109,5 +122,57 @@ describe('score report', () => {
     const { catalog, gold, test: annotations } = await setUp();
     const report = await scoreFolders(gold, annotations, catalog, null);
     expect(report.recordings[0]?.checkSeconds).toBeNull();
+  });
+
+  test('names every file that breaks the contract and scores nothing against it', async () => {
+    const { catalog, gold, test: annotations, contract } = await setUp();
+    // Gold of another recording, gold out of order, a stop that is no timestamp, and no JSON.
+    await writeFile(join(gold, 'rec-a.json'), JSON.stringify(contract('rec-c', [[10, 30]])));
+    const unsorted = contract('rec-c', [
+      [50, 70],
+      [10, 30],
+    ]);
+    await writeFile(join(gold, 'rec-c.json'), JSON.stringify(unsorted));
+    const noTime = {
+      ...contract('rec-b', []),
+      keep_intervals: [{ start_ns: '0', end_ns: 'soon' }],
+    };
+    await writeFile(join(annotations, 'rec-b.json'), JSON.stringify(noTime));
+    await writeFile(join(annotations, 'rec-c.json'), '{ "recording_id": ');
+
+    const report = await scoreFolders(gold, annotations, catalog, null);
+    expect(report.recordings).toEqual([]);
+    expect(report.skipped).toEqual([]);
+    expect(report.invalid).toEqual([
+      { path: join(gold, 'rec-a.json'), problems: ['recording_id must be "rec-a"'] },
+      {
+        path: join(annotations, 'rec-b.json'),
+        problems: [
+          'keep_intervals[0] must be {"start_ns", "end_ns"} with decimal-string timestamps',
+        ],
+      },
+      {
+        path: join(gold, 'rec-c.json'),
+        problems: ['keep_intervals[1] must start after the previous interval ends'],
+      },
+      {
+        path: join(annotations, 'rec-c.json'),
+        problems: [expect.stringMatching(/^not valid JSON/)],
+      },
+    ]);
+    expect(formatReport(report)).toContain(
+      `Not scored: ${join(gold, 'rec-a.json')} is invalid: recording_id must be "rec-a"`,
+    );
+  });
+
+  test('pnpm score exits non-zero on an invalid file or a missing folder', async () => {
+    const { catalogPath, gold, test: annotations, telemetry } = await setUp();
+    const options = ['--catalog', catalogPath, '--telemetry', telemetry];
+    expect((await score(gold, annotations, ...options)).code).toBe(0);
+    await writeFile(join(gold, 'rec-a.json'), '[]');
+    const failed = await score(gold, annotations, ...options);
+    expect(failed.code).toBe(1);
+    expect(failed.stdout).toContain(`Not scored: ${join(gold, 'rec-a.json')} is invalid`);
+    expect((await score(join(gold, 'missing'), annotations, ...options)).code).toBe(2);
   });
 });

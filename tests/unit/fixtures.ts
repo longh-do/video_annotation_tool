@@ -1,7 +1,8 @@
 /** Synthetic recording folders on disk, laid out like the real downloads. */
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterAll } from 'vitest';
 import { framesCsv } from './synthetic.ts';
 
 export interface RecordingFixture {
@@ -28,8 +29,14 @@ const CAMERAS = [
   ['umi.right.camera.enc', 'right', 2_999_972_500_000n],
 ] as const;
 
-export function tempDir(): Promise<string> {
-  return mkdtemp(join(tmpdir(), 'video-annotation-tool-'));
+/** The temporary folders this test file made; they are removed once its tests are done. */
+const made: string[] = [];
+afterAll(() => Promise.all(made.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))));
+
+export async function tempDir(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'video-annotation-tool-'));
+  made.push(dir);
+  return dir;
 }
 
 export async function writeRecording(

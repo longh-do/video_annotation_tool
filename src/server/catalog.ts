@@ -14,12 +14,14 @@ export interface Catalog {
   readonly recordings: readonly Recording[];
 }
 
-/** What to keep in a task's recordings, shown beside them and stamped on every save. */
+/**
+ * What to keep in a task's recordings, shown beside them and stamped on every save. Its title
+ * and version are read from the file whenever it is served, so an edit shows without an ingest.
+ */
 export interface TaskGuide {
   readonly path: string;
+  /** The title when ingest read it. */
   readonly title: string;
-  /** A content hash, so a save records exactly which text the annotator worked from. */
-  readonly version: string;
   /** Recording-id patterns from the guide's header. */
   readonly recordings: readonly string[];
 }
@@ -40,7 +42,10 @@ export interface Camera {
   readonly name: string;
   /** Short name from the video file, e.g. `head`. */
   readonly label: string;
-  /** Manifest-relative path, e.g. `videos/head-0000.mp4`; the reference camera's is `reference_video`. */
+  /**
+   * Manifest-relative path, e.g. `videos/head-0000.mp4`; the reference camera's is
+   * `reference_video`.
+   */
   readonly video: string;
   readonly videoPath: string;
   readonly framesPath: string;

@@ -7,12 +7,18 @@
  * spent per checked boundary (from the telemetry of the annotator who saved the file). Accuracy is
  * boundary error in frames and interval mistakes. They are reported side by side, never blended:
  * accuracy is a floor, speed is what to improve above it. Drafts and recordings sent to review
- * are not scored: only accepted work counts.
+ * are not scored: only accepted work counts. Gold and annotation files are checked against the
+ * contract like a save, and a recording with a file that breaks it is not scored either.
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AnnotationFile, Sidecar } from '../core/annotation.ts';
-import { parseFramesCsv } from '../core/frame-map.ts';
+import {
+  type AnnotationFile,
+  type Reference,
+  type Sidecar,
+  validateAnnotationFile,
+} from '../core/annotation.ts';
+import { type FrameMap, parseFramesCsv } from '../core/frame-map.ts';
 import {
   type ErrorSummary,
   frameRanges,
@@ -49,6 +55,8 @@ export interface Report {
   readonly checkSeconds: DurationSummary | null;
   /** Recordings left out, and why. */
   readonly skipped: readonly { readonly id: string; readonly reason: string }[];
+  /** Files that break the contract; their recordings are not scored. */
+  readonly invalid: readonly { readonly path: string; readonly problems: readonly string[] }[];
   /** Telemetry lines that couldn't be read. */
   readonly badTelemetryLines: number;
 }
@@ -62,10 +70,25 @@ export async function scoreFolders(
   const telemetry = telemetryPath ? await readChecks(telemetryPath) : { checks: [], bad: 0 };
   const recordings: RecordingScore[] = [];
   const skipped: { id: string; reason: string }[] = [];
+  const invalid: { path: string; problems: readonly string[] }[] = [];
   const allChecks: number[] = [];
   for (const recording of catalog.recordings) {
-    const gold = await readJson<AnnotationFile>(join(goldDir, `${recording.id}.json`));
-    const test = await readJson<AnnotationFile>(join(testDir, `${recording.id}.json`));
+    const camera = referenceCamera(recording);
+    // The frames are read only for a recording that has a file to check.
+    let framesRead: Promise<FrameMap> | undefined;
+    const reference = async (): Promise<Reference> => {
+      framesRead ??= readFile(camera.framesPath, 'utf8').then(parseFramesCsv);
+      return { recordingId: recording.id, referenceVideo: camera.video, frames: await framesRead };
+    };
+    const goldFile = await readContract(join(goldDir, `${recording.id}.json`), reference);
+    const testFile = await readContract(join(testDir, `${recording.id}.json`), reference);
+    const broken = [goldFile, testFile].filter((file) => file.problems.length > 0);
+    if (broken.length > 0) {
+      invalid.push(...broken.map(({ path, problems }) => ({ path, problems })));
+      continue;
+    }
+    const gold = goldFile.annotation;
+    const test = testFile.annotation;
     if (!gold || !test) {
       skipped.push({ id: recording.id, reason: gold ? 'no annotation' : 'no gold' });
       continue;
@@ -74,7 +97,7 @@ export async function scoreFolders(
       skipped.push({ id: recording.id, reason: test.status.replace('_', ' ') });
       continue;
     }
-    const frames = parseFramesCsv(await readFile(referenceCamera(recording).framesPath, 'utf8'));
+    const { frames } = await reference();
     const score = scoreRanges(
       frameRanges(gold.keep_intervals, frames),
       frameRanges(test.keep_intervals, frames),
@@ -106,8 +129,35 @@ export async function scoreFolders(
     realTimeFactor: durationS > 0 ? activeS / durationS : null,
     checkSeconds: summarizeDurations(allChecks),
     skipped,
+    invalid,
     badTelemetryLines: telemetry.bad,
   };
+}
+
+interface ContractFile {
+  readonly path: string;
+  /** Null when the file is missing or breaks the contract. */
+  readonly annotation: AnnotationFile | null;
+  readonly problems: readonly string[];
+}
+
+/** A gold or annotation file, checked against the contract like a save. */
+async function readContract(
+  path: string,
+  reference: () => Promise<Reference>,
+): Promise<ContractFile> {
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(path, 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { path, annotation: null, problems: [] };
+    }
+    if (!(error instanceof SyntaxError)) throw error;
+    return { path, annotation: null, problems: [`not valid JSON (${error.message})`] };
+  }
+  const problems = validateAnnotationFile(value, await reference());
+  return { path, annotation: problems.length > 0 ? null : (value as AnnotationFile), problems };
 }
 
 interface Check {
@@ -154,9 +204,9 @@ async function readChecks(path: string): Promise<{ checks: Check[]; bad: number 
 
 function summarizeDurations(seconds: readonly number[]): DurationSummary | null {
   if (seconds.length === 0) return null;
-  const sorted = seconds.toSorted((a, b) => a - b);
-  const rank = (p: number) => sorted[Math.max(Math.ceil(p * sorted.length) - 1, 0)] ?? 0;
-  return { count: sorted.length, median: rank(0.5), p90: rank(0.9) };
+  // Durations are never negative, so the percentiles of their absolute values are theirs.
+  const { count, medianAbs, p90Abs } = summarizeErrors(seconds);
+  return { count, median: medianAbs, p90: p90Abs };
 }
 
 /** The report as a table for the terminal. */
@@ -204,6 +254,9 @@ export function formatReport(report: Report): string {
     row.map((cell, column) => cell.padEnd(widths[column] ?? 0)).join('  '),
   );
   const notes = [
+    ...report.invalid.map(
+      ({ path, problems }) => `Not scored: ${path} is invalid: ${problems.join('; ')}`,
+    ),
     ...report.skipped.map(({ id, reason }) => `Not scored: ${id} (${reason})`),
     ...(report.badTelemetryLines > 0
       ? [`Telemetry lines that couldn't be read: ${report.badTelemetryLines}`]

@@ -3,7 +3,8 @@
  *
  * Two folder layouts occur. Usually the manifest, frames CSVs and `videos/` sit together. The long
  * recording was unzipped with its manifest and CSVs in a subfolder beside `videos/`, so a video
- * path the manifest gives relative to itself is also looked up one folder up. Nothing is moved.
+ * path the manifest gives relative to itself is also looked up one folder up. Nothing is moved,
+ * and nothing is written inside the data folder.
  *
  * Checks, any of which rejects a recording: the manifest is well formed; each camera's frames CSV
  * parses, has the manifest's frame count and first/last timestamps, and (when ffprobe is
@@ -15,7 +16,7 @@
  * guide that covers it, with a warning when several or none do.
  */
 import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { displayedFrame, type FrameMap, frameCount, parseFramesCsv } from '../core/frame-map.ts';
 import { isNsString } from '../core/ns.ts';
 import {
@@ -25,7 +26,7 @@ import {
   type Recording,
   type TaskGuide,
 } from './catalog.ts';
-import { type MediaTools, SPRITE_GRID } from './ffmpeg.ts';
+import { type MediaTools, SHEET_NAME, SPRITE_GRID } from './ffmpeg.ts';
 import { readTaskGuides, tasksCovering } from './task-guides.ts';
 
 export interface Inspection {
@@ -68,6 +69,11 @@ export async function ingest(
   options: IngestOptions,
 ): Promise<{ catalog: Catalog; inspections: Inspection[]; taskWarnings: string[] }> {
   const outDir = resolve(options.outDir);
+  const dataDir = resolve(options.dataDir);
+  // Each recording's thumbnails replace a folder named after it: never among the recordings.
+  if (isInside(outDir, dataDir)) {
+    throw new Error(`the output folder ${outDir} is inside the data folder ${dataDir}`);
+  }
   const guides = options.tasksDir === null ? null : await readTaskGuides(options.tasksDir);
   const inspections: Inspection[] = [];
   const seen = new Set<string>();
@@ -105,6 +111,12 @@ export async function ingest(
   await mkdir(outDir, { recursive: true });
   await writeFile(join(outDir, 'catalog.json'), `${JSON.stringify(catalog, null, 2)}\n`);
   return { catalog, inspections, taskWarnings: guides?.warnings ?? [] };
+}
+
+/** Whether `path` is `folder` or inside it. */
+export function isInside(path: string, folder: string): boolean {
+  const rel = relative(resolve(folder), resolve(path));
+  return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`));
 }
 
 /** Every manifest.json under `dir`, in path order (the downloads are numbered 01, 02, …). */
@@ -215,7 +227,10 @@ function frameMapProblem(frames: FrameMap, part: ManifestPart): string | null {
   return null;
 }
 
-/** The frames CSV must list exactly the video's timestamps, or the frame shown isn't the frame saved. */
+/**
+ * The frames CSV must list exactly the video's timestamps, or the frame shown isn't the frame
+ * saved.
+ */
 async function videoProblem(
   frames: FrameMap,
   videoPath: string,
@@ -246,7 +261,8 @@ function withTask(recording: Recording, tasks: ReadonlyMap<string, TaskGuide>): 
 
 /**
  * Keyframe thumbnails of the reference camera, built in a temporary folder and moved into place
- * only when complete. They are a navigation aid: if ffmpeg fails, the recording goes on without.
+ * only when complete. They replace the recording's earlier thumbnails, but never a folder that
+ * holds anything else. They are a navigation aid: if ffmpeg fails, the recording goes on without.
  */
 async function withThumbnails(
   recording: Recording,
@@ -261,6 +277,9 @@ async function withThumbnails(
     const sprites = await tools.sprites(reference.videoPath, temp, TILE_WIDTH);
     const frames = parseFramesCsv(await readFile(reference.framesPath, 'utf8'));
     const finalDir = join(outDir, recording.id);
+    if (!(await holdsOnlySheets(finalDir))) {
+      throw new Error(`${finalDir} holds more than thumbnails; left it alone`);
+    }
     await rm(finalDir, { recursive: true, force: true });
     await rename(temp, finalDir);
     const thumbnails = {
@@ -275,6 +294,16 @@ async function withThumbnails(
   } catch (error) {
     await rm(temp, { recursive: true, force: true });
     return { ...recording, warnings: [...recording.warnings, `no thumbnails: ${message(error)}`] };
+  }
+}
+
+/** Whether `dir` is missing or holds nothing but sprite sheets: thumbnails ingest wrote. */
+async function holdsOnlySheets(dir: string): Promise<boolean> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    return entries.every((entry) => entry.isFile() && SHEET_NAME.test(entry.name));
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
   }
 }
 
@@ -311,7 +340,9 @@ function isManifestPart(value: unknown): value is ManifestPart {
   );
 }
 
-/** A warning when an annotation template beside the manifest (or one up) names another recording. */
+/**
+ * A warning when an annotation template beside the manifest (or one up) names another recording.
+ */
 async function templateWarning(dir: string, id: string): Promise<string | null> {
   const candidates = [
     join(dir, 'annotation-template.json'),

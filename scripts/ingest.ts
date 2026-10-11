@@ -7,12 +7,13 @@
  * Task guides, one Markdown file per task (see docs/task-guide-template.md), are read from this
  * repository's `tasks/` folder; --tasks reads them from another folder instead. Without any,
  * annotators see no task guide. Exits non-zero if a recording was rejected or none was found.
+ * The recordings are only read: --out must not be inside the data folder.
  */
 import { stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import { findMediaTools } from '../src/server/ffmpeg.ts';
-import { ingest } from '../src/server/ingest.ts';
+import { ingest, isInside } from '../src/server/ingest.ts';
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -25,6 +26,10 @@ const { positionals, values } = parseArgs({
 const dataDir = positionals[0];
 if (!dataDir) {
   console.error('usage: pnpm ingest <data folder> [--tasks <folder>] [--out <folder>]');
+  process.exit(2);
+}
+if (isInside(values.out, dataDir)) {
+  console.error(`--out ${values.out} is inside the data folder; ingest never writes there`);
   process.exit(2);
 }
 

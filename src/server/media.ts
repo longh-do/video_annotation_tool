@@ -9,17 +9,14 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { extname } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
+/** What the server sends: videos, frames CSVs, thumbnail sheets and the built UI. */
 const CONTENT_TYPES: Record<string, string> = {
   '.mp4': 'video/mp4',
   '.csv': 'text/csv; charset=utf-8',
   '.jpg': 'image/jpeg',
-  '.json': 'application/json; charset=utf-8',
-  '.md': 'text/markdown; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.woff2': 'font/woff2',
 };
 
 export interface ByteRange {
@@ -51,6 +48,10 @@ export function parseRange(
   return start >= size ? 'unsatisfiable' : { start, end };
 }
 
+/**
+ * Sends a file, or 304 Not Modified when the browser's copy is still current: the ETag changes
+ * whenever the file does.
+ */
 export async function sendFile(
   req: IncomingMessage,
   res: ServerResponse,
@@ -58,12 +59,20 @@ export async function sendFile(
   cacheControl = 'no-store',
 ): Promise<void> {
   const { size, mtime } = await stat(path);
+  const validators = {
+    ETag: `W/"${size}-${mtime.getTime()}"`,
+    'Last-Modified': mtime.toUTCString(),
+    'Cache-Control': cacheControl,
+  };
+  if (namesTag(req.headers['if-none-match'], validators.ETag)) {
+    res.writeHead(304, validators).end();
+    return;
+  }
   const range = parseRange(req.headers.range, size);
   const headers: Record<string, string | number> = {
     'Content-Type': CONTENT_TYPES[extname(path)] ?? 'application/octet-stream',
     'Accept-Ranges': 'bytes',
-    'Last-Modified': mtime.toUTCString(),
-    'Cache-Control': cacheControl,
+    ...validators,
   };
   if (range === 'unsatisfiable') {
     res.writeHead(416, { ...headers, 'Content-Range': `bytes */${size}` }).end();
@@ -77,4 +86,10 @@ export async function sendFile(
     return;
   }
   await pipeline(createReadStream(path, { start, end }), res);
+}
+
+/** Whether an If-None-Match header lists `etag`, compared as for GET (W/ aside). */
+function namesTag(header: string | undefined, etag: string): boolean {
+  const opaque = (tag: string) => tag.trim().replace(/^W\//, '');
+  return header?.split(',').some((tag) => opaque(tag) === opaque(etag)) ?? false;
 }
