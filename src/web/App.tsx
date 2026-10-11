@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { QueueResponse } from '../core/api-types.ts';
 import { fetchQueue } from './api.ts';
 import { canAnnotate } from './browser.ts';
+import type { Decision } from './components/OutcomeQuestion.tsx';
 import { QueueBar } from './components/QueueBar.tsx';
 import { QueueOverlay } from './components/QueueOverlay.tsx';
 import { Toast, type ToastMessage } from './components/Toast.tsx';
@@ -11,7 +12,7 @@ import { nextToAnnotate } from './queue.ts';
 import { prefetchMedia } from './recording.ts';
 import { type Opened, Sessions } from './sessions.ts';
 import { Telemetry } from './telemetry.ts';
-import { type Decision, Workspace } from './Workspace.tsx';
+import { Workspace } from './Workspace.tsx';
 
 /**
  * The queue. Opens the recording the URL names (#<id> or #<id>/<frame>), else the first one not
