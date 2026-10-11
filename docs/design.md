@@ -50,7 +50,7 @@ Measured with barcoded test clips: 200 of 200 marks made while paused save exact
 ## Saving and recovery
 
 - Every change goes to an IndexedDB **journal** at once (strict durability; Chrome's default can lose the last writes in a crash) and to the server after 300 ms of quiet, never more than 2 s later. The save chip says "Saving…" as soon as a change waits.
-- The server writes atomically (temp file, fsync, rename, directory fsync), keeps every revision, and refuses a save based on an old revision (412). A second tab on the same recording therefore stops with a conflict instead of overwriting.
+- The server writes atomically (temp file, fsync, rename, directory fsync except on Windows), keeps every revision, and refuses a save based on an old revision (412); the next load finishes a save that a crash cut short. A second tab on the same recording therefore stops with a conflict instead of overwriting.
 - After a crash the journal is reopened if it builds on what the server has — including when the save that was in flight landed but the page died before hearing so — and otherwise the server's version wins and the annotator is told.
 - Each recording's annotation (editor, undo history, saver) lives as long as the page, so going back to a recording keeps its undo history; the toast after "no useful task" can undo it. Keys stay off from an outcome until the next recording is on screen, so nothing typed in between lands on the wrong one.
 

@@ -56,4 +56,6 @@ Steady-state QA costs about 20% of capacity. Pass/fail thresholds are per-task Q
 | `telemetry/events.jsonl` | an event pipeline into a warehouse for the KPIs above |
 | — | a review mode of the same screen: Accept, Fix & accept, Return |
 
+The prototype keeps a full copy of every autosave in `annotations/.history/<recording_id>/` (about 63 KB each at 320 boundaries; a long session saves hundreds) and lists that folder on every save and load. That is fine for one annotator; in production, revisions are rows found by index, and the drafts between outcomes are pruned or stored as differences.
+
 The browser side would not change much: it already saves through a revisioned API, journals unsaved work, prefetches the next recording and logs the events the KPIs need. The annotator id, today the server's `--annotator` flag, would come from sign-in.
