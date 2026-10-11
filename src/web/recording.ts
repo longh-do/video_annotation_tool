@@ -32,7 +32,7 @@ const CACHED = 3;
 /** The least recently asked for first. */
 const media = new Map<string, Promise<RecordingMedia>>();
 
-/** Starts fetching a recording's media (no-op if already started); used to prefetch the next one. */
+/** Starts fetching a recording's media unless already started, e.g. to prefetch the next one. */
 export function prefetchMedia(id: string): Promise<RecordingMedia> {
   let pending = media.get(id);
   if (!pending) {

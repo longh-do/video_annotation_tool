@@ -13,7 +13,7 @@ const csv = framesCsv([
   { file: 'head-0000.mp4', startNs: 3_000_000_000_000n, gapsUs: new Array(99).fill(33_000) },
 ]);
 
-/** A fake server: any recording's media, and annotations saved with revisions (If-Match checked). */
+/** A fake server: any recording's media, and annotations saved with revisions (If-Match). */
 function server() {
   const saved = new Map<string, SavedAnnotation>();
   /** Saves per recording; it outlives deleted annotation files, as the server's history does. */

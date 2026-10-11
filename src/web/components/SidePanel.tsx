@@ -30,7 +30,7 @@ export function SidePanel({ tabs, width, onResize }: SidePanelProps) {
   };
   return (
     <section className="panel">
-      {/* biome-ignore lint/a11y/useSemanticElements: a draggable splitter has no element of its own */}
+      {/* biome-ignore lint/a11y/useSemanticElements: a splitter has no element of its own */}
       <div
         className="panel-resize"
         role="separator"
