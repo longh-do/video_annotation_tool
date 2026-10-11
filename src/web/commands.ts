@@ -1,7 +1,7 @@
 /**
  * What each key does, and what the mouse does on the timeline and in the interval list, under
- * the same rules. Handlers read the player and the editor at the moment of the key press, never a value
- * captured at the last render: a held key fires faster than React renders.
+ * the same rules. Handlers read the player and the editor at the moment of the key press, never a
+ * value captured at the last render: a held key fires faster than React renders.
  */
 import { nextToCheck } from '../core/check.ts';
 import type { State } from '../core/timeline.ts';

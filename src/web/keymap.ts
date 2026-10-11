@@ -252,7 +252,7 @@ export function matches(chord: Chord, event: KeyboardEvent): boolean {
   if (Boolean(chord.mod) !== mod || otherMod || event.altKey) return false;
   if (Boolean(chord.shift) !== event.shiftKey) return false;
   if (chord.code !== undefined) return event.code === chord.code;
-  // A letter: follow the layout, but fall back to the physical key on layouts without Latin letters.
+  // A letter follows the layout, with the physical key as a fallback on non-Latin layouts.
   const key = event.key.toLowerCase();
   return (
     key === chord.key || (!/^[a-z]$/.test(key) && event.code === `Key${chord.key?.toUpperCase()}`)

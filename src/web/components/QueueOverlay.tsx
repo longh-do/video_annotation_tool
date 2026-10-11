@@ -15,7 +15,10 @@ const STATUS: Record<QueueItem['status'], string> = {
   needs_review: 'needs review',
 };
 
-/** Every recording in the batch, to go back to one or pick another. Escape or a click beside it closes it. */
+/**
+ * Every recording in the batch, to go back to one or pick another. Escape or a click beside it
+ * closes it.
+ */
 export function QueueOverlay({ recordings, current, onOpen, onClose }: QueueOverlayProps) {
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => dialog.current?.focus(), []);

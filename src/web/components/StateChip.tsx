@@ -9,7 +9,9 @@ interface StateChipProps {
   readonly frame: number;
 }
 
-/** "● KEEP 0:12.4": the state at the playhead and how long it has lasted. Colour and pattern differ. */
+/**
+ * "● KEEP 0:12.4": the state at the playhead and how long it has lasted. Colour and pattern differ.
+ */
 export function StateChip({ runs, frames, frame }: StateChipProps) {
   const run = runs.find((s) => s.start <= frame && frame < s.end);
   const state = run?.state ?? 'cut';

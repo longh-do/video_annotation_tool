@@ -23,7 +23,7 @@ interface TimelineBarProps {
   /** False while editing is off: boundaries can't be grabbed or deleted then. */
   readonly editable: boolean;
   readonly onSeek: (frame: number) => void;
-  /** A click on the track: the interval there is selected (or nothing, on a cut) and `frame` shown. */
+  /** A click on the track: the interval there is selected (nothing, on a cut) and `frame` shown. */
   readonly onSelectInterval: (start: number | null, frame: number) => void;
   readonly onDragStart: (index: number) => void;
   readonly onDrag: (index: number, frame: number) => void;
@@ -210,7 +210,7 @@ export function TimelineBar(props: TimelineBarProps) {
   }, [timeline, frames, view, width, endUs, selected]);
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: a pointer surface; every action on it also has a key
+    // biome-ignore lint/a11y/noStaticElementInteractions: every action here also has a key
     <div
       ref={box}
       className={`timeline${dragging || hover?.grab ? ' timeline-grab' : ''}`}

@@ -1,4 +1,4 @@
-/** The timeline and the mouse: zoom, selection, edges, badges, the menu, and annotating by mouse only. */
+/** The timeline and the mouse: zoom, selection, edges, badges, the menu, mouse-only annotating. */
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';

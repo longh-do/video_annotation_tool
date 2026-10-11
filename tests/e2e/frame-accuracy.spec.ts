@@ -53,7 +53,7 @@ function randomFrames(count: number, max: number, seed: number): number[] {
   return [...picked].sort((a, b) => a - b);
 }
 
-/** Alternate S and D at increasing frames: every press starts a new run, so keep intervals pair them. */
+/** Alternate S and D at increasing frames: each press starts a run, so keep intervals pair them. */
 function expectedIntervals(marks: readonly number[], frames: FrameMap) {
   const intervals = [];
   for (let i = 0; i + 1 < marks.length; i += 2) {
