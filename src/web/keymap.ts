@@ -180,7 +180,7 @@ export const BINDINGS = [
   { command: 'noTask', label: 'No useful task…', group: 'Finish', chords: [{ key: 'n' }] },
   { command: 'needsReview', label: 'Needs review…', group: 'Finish', chords: [{ key: 'q' }] },
   {
-    command: 'help',
+    command: 'commandMenu',
     label: 'Command menu',
     group: 'Help',
     chords: [{ key: 'k', mod: true }, { key: 'h' }],

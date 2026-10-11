@@ -28,14 +28,13 @@ interface TransportProps {
 /**
  * The row above the timeline. Left: the state at the playhead and the Start and Stop buttons
  * (S and D for the mouse). Middle: the time, previous boundary, play/pause, next boundary and the
- * length. Right: speed, sound and zoom. Buttons never take the focus, so keys keep working.
+ * length. Right: speed, sound and zoom.
  */
 export function Transport(props: TransportProps) {
   const { player, timeline, frames, editable, onRun } = props;
   const playing = usePlayer(player, (s) => s.playing);
   const duration = (frames.ptsUs[frames.ptsUs.length - 1] ?? 0) / 1e6;
   const press = (command: Command) => ({
-    onMouseDown: (event: React.MouseEvent) => event.preventDefault(),
     onClick: () => onRun(command),
   });
 
@@ -103,7 +102,6 @@ export function Transport(props: TransportProps) {
             props.sound ? 'Sound on: a tick on every Start and Stop. Click to mute.' : 'Sound off'
           }
           aria-label={props.sound ? 'Mute the ticks' : 'Turn the ticks on'}
-          onMouseDown={(event) => event.preventDefault()}
           onClick={props.onToggleSound}
         >
           <SoundIcon on={props.sound} />
@@ -162,7 +160,6 @@ function SpeedMenu({
         title="Playback speed"
         aria-haspopup="menu"
         aria-expanded={anchor !== null}
-        onMouseDown={(event) => event.preventDefault()}
         onClick={() => setAnchor(anchor ? null : (button.current?.getBoundingClientRect() ?? null))}
       >
         {skimming ? `${SKIM_SPEED}× skim` : `${speed}×`}
@@ -195,7 +192,6 @@ function SkimButton({ player }: { readonly player: Player | null }) {
       className="skim"
       title={`Hold to skim at ${SKIM_SPEED}× (or hold ${keysOf('skim')})`}
       aria-pressed={skimming}
-      onMouseDown={(event) => event.preventDefault()}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -226,7 +222,6 @@ function ZoomSlider({
   const min = minSpan(max);
   const level = min < max ? Math.round((100 * Math.log(spanUs / max)) / Math.log(min / max)) : 0;
   const step = (factor: number) => ({
-    onMouseDown: (event: React.MouseEvent) => event.preventDefault(),
     onClick: () => view.zoom(factor, anchor()),
   });
   return (

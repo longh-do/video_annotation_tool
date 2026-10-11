@@ -8,7 +8,7 @@ import { resetAll, savedAnnotation } from './server-state.ts';
 import { E2E_DIR, SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
 const recording = SYNTHETIC_RECORDINGS[2] as SyntheticRecording;
-const HEAD = 'video[data-camera="head"]';
+const HEAD = 'video[data-reference]';
 
 interface Boundary {
   readonly frame: number;

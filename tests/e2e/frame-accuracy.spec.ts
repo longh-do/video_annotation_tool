@@ -14,7 +14,7 @@ import { E2E_DIR, SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthe
 const [longer, shorter] = SYNTHETIC_RECORDINGS as [SyntheticRecording, SyntheticRecording];
 
 test.beforeEach(({ request }) => resetAll(request));
-const HEAD = 'video[data-camera="head"]';
+const HEAD = 'video[data-reference]';
 
 async function headFrames(recording: SyntheticRecording): Promise<FrameMap> {
   const folder = join(E2E_DIR, 'data', recording.folder);
@@ -100,7 +100,7 @@ test('a mark made during 2× playback saves the last frame shown at the key pres
       'keydown',
       (event) => {
         if (event.key !== 's' && event.key !== 'd') return;
-        const video = document.querySelector<HTMLVideoElement>('video[data-camera="head"]');
+        const video = document.querySelector<HTMLVideoElement>('video[data-reference]');
         if (!video) return;
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;

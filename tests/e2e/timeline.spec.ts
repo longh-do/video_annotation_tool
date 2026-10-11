@@ -230,6 +230,17 @@ test('the right-click menu deletes, merges and keeps; a badge click deletes its 
   await expect(page.getByRole('menu')).toBeHidden();
 });
 
+test("a deletion's Undo goes with its recording: opening another one closes the message", async ({
+  page,
+}) => {
+  await open(page, 0);
+  await keep(page, 30, 60);
+  await page.locator('.tl-badge[data-frame="60"]').click();
+  await expect(page.locator('.toast')).toContainText('Deleted the boundary');
+  await showRecording(page, (SYNTHETIC_RECORDINGS[0] as SyntheticRecording).id);
+  await expect(page.locator('.toast')).toBeHidden();
+});
+
 test('mouse only: play, Start and Stop, check each mark, then Submit', async ({ page }) => {
   await open(page, 20);
   await page.getByRole('button', { name: 'Play' }).click();

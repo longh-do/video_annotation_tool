@@ -144,7 +144,6 @@ export function CameraTile({ label, area, note, onShowLarge, children }: CameraT
           className="camera-pick"
           aria-label={`Show the ${label} camera large`}
           title={`Show the ${label} camera large`}
-          onMouseDown={(event) => event.preventDefault()}
           onClick={onShowLarge}
         />
       )}

@@ -64,7 +64,6 @@ export function SidePanel({ tabs, width, onResize }: SidePanelProps) {
             type="button"
             role="tab"
             aria-selected={label === open}
-            onMouseDown={(event) => event.preventDefault()}
             onClick={() => setOpen(label)}
           >
             {label}

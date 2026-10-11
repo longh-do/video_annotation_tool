@@ -24,7 +24,6 @@ export function QueueBar({ position, total, next, onOpenQueue }: QueueBarProps) 
       data-next={next}
       aria-label={`Queue: recording ${position} of ${total}`}
       title={`Recording ${position} of ${total} (${NEXT[next]}). Click for the list.`}
-      onMouseDown={(event) => event.preventDefault()}
       onClick={onOpenQueue}
     >
       <ListIcon />

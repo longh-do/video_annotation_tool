@@ -288,9 +288,8 @@ export function TimelineBar(props: TimelineBarProps) {
         <button
           key={badge.frame}
           type="button"
+          // Out of the Tab order: a long recording has hundreds.
           tabIndex={-1}
-          // Never takes the focus, so Space and Enter stay with the shortcuts.
-          onMouseDown={(event) => event.preventDefault()}
           data-badge=""
           data-index={badge.index}
           data-frame={badge.frame}

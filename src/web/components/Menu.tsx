@@ -88,7 +88,6 @@ export function Menu({ label, items, at, owner, onClose }: MenuProps) {
           type: 'button',
           className: `menu-item${item.danger ? ' menu-danger' : ''}`,
           disabled: item.disabled,
-          onMouseDown: (event: React.MouseEvent) => event.preventDefault(),
           onClick: () => {
             onClose();
             item.run();

@@ -17,7 +17,7 @@ import { E2E_DIR, SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthe
 const recording = SYNTHETIC_RECORDINGS[0] as SyntheticRecording;
 
 test.beforeEach(({ request }) => resetAll(request));
-const HEAD = 'video[data-camera="head"]';
+const HEAD = 'video[data-reference]';
 
 async function cameraFrames(label: string): Promise<FrameMap> {
   const folder = join(E2E_DIR, 'data', recording.folder);

@@ -104,7 +104,6 @@ export function CommandMenu({ onRun, onClose }: CommandMenuProps) {
                       key={binding.command}
                       type="button"
                       className={`command${binding === chosen ? ' command-active' : ''}`}
-                      onMouseDown={(event) => event.preventDefault()}
                       onMouseMove={() => setActive(runnable.indexOf(binding))}
                       onClick={() => run(binding.command)}
                     >

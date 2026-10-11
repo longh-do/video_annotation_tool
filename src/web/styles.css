@@ -56,7 +56,7 @@ button.primary {
   font-weight: 600;
 }
 
-/* Keyboard focus is always visible (mouse clicks never move the focus: see the buttons). */
+/* Keyboard focus is always visible (a click never moves it to a button or link: see main.tsx). */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

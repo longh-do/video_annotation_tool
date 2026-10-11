@@ -53,7 +53,6 @@ export function IntervalList(props: IntervalListProps) {
               type="button"
               className={classes.join(' ')}
               aria-pressed={interval.start === selected}
-              onMouseDown={(event) => event.preventDefault()}
               onClick={() => props.onSelect(interval)}
               onContextMenu={(event) => {
                 event.preventDefault();

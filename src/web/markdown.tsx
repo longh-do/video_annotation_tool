@@ -4,7 +4,7 @@
  * strings, so a guideline can't inject markup. Web links open in a new tab; any other link is shown
  * as its text.
  */
-import type { MouseEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 type Block =
   | { readonly kind: 'heading'; readonly level: number; readonly text: string }
@@ -92,13 +92,10 @@ function inline(text: string): ReactNode[] {
   return nodes;
 }
 
-/** Links never take the focus: Space and Enter must keep reaching the shortcuts. */
-const keepFocus = (event: MouseEvent) => event.preventDefault();
-
 function link(key: number, label: string, href: string): ReactNode {
   if (!/^https?:\/\//.test(href)) return label;
   return (
-    <a key={key} href={href} target="_blank" rel="noreferrer" onMouseDown={keepFocus}>
+    <a key={key} href={href} target="_blank" rel="noreferrer">
       {inline(label)}
     </a>
   );

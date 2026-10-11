@@ -19,7 +19,7 @@ export interface CommandContext {
   readonly sound: () => boolean;
   /** Zooms the timeline: in or out around the playhead, or out to the whole recording. */
   readonly zoom: (how: 'in' | 'out' | 'fit') => void;
-  readonly toggleHelp: () => void;
+  readonly toggleCommandMenu: () => void;
   readonly submit: () => void;
   readonly noTask: () => void;
   readonly needsReview: () => void;
@@ -119,7 +119,7 @@ export function createCommands(ctx: CommandContext): Record<Command, KeyHandler>
     zoomFit: () => ctx.zoom('fit'),
     noTask: editing(() => ctx.noTask()),
     needsReview: editing(() => ctx.needsReview()),
-    help: () => ctx.toggleHelp(),
+    commandMenu: () => ctx.toggleCommandMenu(),
   };
 }
 

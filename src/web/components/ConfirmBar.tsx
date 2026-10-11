@@ -66,7 +66,7 @@ export function ConfirmBar({ title, details, actions, onCancel, armMs = 0 }: Con
         </ul>
       )}
       <div className="confirm-actions">
-        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onCancel}>
+        <button type="button" onClick={onCancel}>
           Back <kbd>Esc</kbd>
         </button>
         {actions.toReversed().map((action) => (
@@ -74,7 +74,6 @@ export function ConfirmBar({ title, details, actions, onCancel, armMs = 0 }: Con
             key={action.label}
             type="button"
             className={action === actions[0] ? 'primary' : undefined}
-            onMouseDown={(event) => event.preventDefault()}
             onClick={action.run}
           >
             {action.label} <kbd>{action.keyLabel}</kbd>

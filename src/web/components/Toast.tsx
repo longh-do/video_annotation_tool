@@ -40,7 +40,6 @@ export function Toast({
         <button
           type="button"
           className="toast-action"
-          onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             onClose();
             action.run();
@@ -54,7 +53,6 @@ export function Toast({
         type="button"
         className="toast-close"
         aria-label="Close the message"
-        onMouseDown={(event) => event.preventDefault()}
         onClick={onClose}
       >
         ×

@@ -120,6 +120,25 @@ test('a keep running to the end of the video asks before submitting', async ({ p
   expect(result?.annotation.keep_intervals[0]?.end_ns).toBeDefined();
 });
 
+test('a keep running to the end can go to review as an unfinished task, from the question', async ({
+  page,
+}) => {
+  await open(page, first.id, 100);
+  await page.keyboard.press('s');
+  await page.keyboard.press('ControlOrMeta+Enter');
+  const question = page.getByRole('alertdialog');
+  await expect(
+    question.getByRole('button', { name: /Needs review: unfinished task/ }),
+  ).toBeVisible();
+  // Its key, like the others in the question, answers it.
+  await page.waitForTimeout(600);
+  await page.keyboard.press('q');
+  await expect(page.locator('.recording-id')).toHaveText(second.id);
+  const result = await saved(page.request, first.id);
+  expect(result?.annotation).toMatchObject({ status: 'needs_review', notes: 'Unfinished task' });
+  expect(result?.sidecar?.review_reason).toBe('unfinished_task');
+});
+
 test('N cuts everything after a confirm; Undo on the toast brings the intervals back', async ({
   page,
 }) => {

@@ -136,7 +136,7 @@ export function Workspace(props: WorkspaceProps) {
     stage.height,
     {
       main: ratioOf(largeCamera),
-      side: Math.max(...info.cameras.filter((_, i) => i !== largeIndex).map(ratioOf), 1),
+      side: Math.max(...info.cameras.filter((_, i) => i !== largeIndex).map(ratioOf)),
     },
     sides,
     TILE_GAP,
@@ -269,7 +269,7 @@ export function Workspace(props: WorkspaceProps) {
       if (how === 'fit') view.fit();
       else view.zoom(how === 'in' ? ZOOM_STEP : 1 / ZOOM_STEP, zoomAnchor());
     },
-    toggleHelp: () => setShowCommands((shown) => !shown),
+    toggleCommandMenu: () => setShowCommands((shown) => !shown),
     // ⌘↵: nothing kept is "no useful task", which N confirms; marks still to check and a keep
     // that runs to the end are worth a second look, so they ask first.
     submit: () => {
@@ -287,7 +287,7 @@ export function Workspace(props: WorkspaceProps) {
   // question is up, none do.
   useKeymap(
     commands,
-    (command) => !blocked && asking === null && (!showCommands || command === 'help'),
+    (command) => !blocked && asking === null && (!showCommands || command === 'commandMenu'),
   );
 
   const run = (command: Command) => {
@@ -315,16 +315,33 @@ export function Workspace(props: WorkspaceProps) {
     return editor.getState().history.present !== before;
   };
   const time = (frame: number) => clock((frames.ptsUs[frame] ?? 0) / 1e6);
-  /** Says what a click deleted, with an Undo that goes away once it would undo anything else. */
+  /** Messages whose Undo acts on this recording: they close when this screen does. */
+  const ownToasts = useRef(new Set<() => void>());
+  useEffect(() => {
+    const open = ownToasts.current;
+    return () => {
+      for (const close of open) close();
+    };
+  }, []);
+  /**
+   * Says what a click deleted, with an Undo that goes away once it would undo anything else, or
+   * once another recording is on screen.
+   */
   const deleted = (text: string) => {
     const after = editor.getState().history.present;
     onToast({
       text,
       action: { label: 'Undo', keys: keysOf('undo'), run: () => latestRun.current('undo') },
-      closeWhen: (close) =>
-        editor.subscribe(() => {
+      closeWhen: (close) => {
+        ownToasts.current.add(close);
+        const stop = editor.subscribe(() => {
           if (editor.getState().history.present !== after) close();
-        }),
+        });
+        return () => {
+          ownToasts.current.delete(close);
+          stop();
+        };
+      },
     });
   };
   const deleteBoundary = (index: number) => {
@@ -408,6 +425,26 @@ export function Workspace(props: WorkspaceProps) {
       matches: submitKey,
       run: () => finish(submit),
     },
+    // The recording may simply end before the task does.
+    ...(keepsToEnd(present)
+      ? [
+          {
+            label: 'Needs review: unfinished task',
+            keyLabel: keysOf('needsReview'),
+            matches: (event: KeyboardEvent) => matches({ key: 'q' }, event),
+            run: () =>
+              finish({
+                action: {
+                  type: 'needs-review',
+                  reason: 'unfinished_task',
+                  notes: 'Unfinished task',
+                },
+                text: `Sent ${info.id} to review.`,
+                undo: false,
+              }),
+          },
+        ]
+      : []),
   ];
   const status = state.outcome.status;
 
@@ -435,7 +472,6 @@ export function Workspace(props: WorkspaceProps) {
             type="button"
             className="recording-id"
             title="Recording ID: click to copy it, e.g. to report a problem"
-            onMouseDown={(event) => event.preventDefault()}
             onClick={() =>
               navigator.clipboard.writeText(info.id).then(
                 () => onToast({ text: `Copied the recording ID ${info.id}` }),
@@ -450,9 +486,8 @@ export function Workspace(props: WorkspaceProps) {
             <button
               type="button"
               className="icon-button command-button"
-              title={`Show command menu… ${keysOf('help').split(' or ')[0]}`}
+              title={`Show command menu… ${keysOf('commandMenu').split(' or ')[0]}`}
               aria-label="Command menu"
-              onMouseDown={(event) => event.preventDefault()}
               onClick={() => setShowCommands(true)}
             >
               ⌘
@@ -463,7 +498,6 @@ export function Workspace(props: WorkspaceProps) {
               title={`Undo (${keysOf('undo')})`}
               aria-label="Undo"
               disabled={!editable || state.history.past.length === 0}
-              onMouseDown={(event) => event.preventDefault()}
               onClick={() => run('undo')}
             >
               <UndoIcon />
@@ -474,7 +508,6 @@ export function Workspace(props: WorkspaceProps) {
               title={`Redo (${keysOf('redo')})`}
               aria-label="Redo"
               disabled={!editable || state.history.future.length === 0}
-              onMouseDown={(event) => event.preventDefault()}
               onClick={() => run('redo')}
             >
               <RedoIcon />
@@ -485,7 +518,6 @@ export function Workspace(props: WorkspaceProps) {
                 className="primary"
                 title={`Submit and open the next recording (${keysOf('submit')})`}
                 disabled={!editable}
-                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => run('submit')}
               >
                 Submit
@@ -498,7 +530,6 @@ export function Workspace(props: WorkspaceProps) {
                 aria-label="Other outcomes"
                 aria-haspopup="menu"
                 disabled={!editable}
-                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   const owner = outcomes.current;
                   if (!owner || menu?.owner === owner) {
@@ -549,7 +580,8 @@ export function Workspace(props: WorkspaceProps) {
                 preload="auto"
                 muted
                 playsInline
-                data-camera="head"
+                data-camera={camera.label}
+                data-reference=""
                 aria-label={`${camera.label} camera, the one annotated`}
               />
             </CameraTile>
@@ -578,7 +610,8 @@ export function Workspace(props: WorkspaceProps) {
               )}
               {seekFailed && (
                 <p className="banner" role="alert">
-                  Couldn't confirm which frame is on screen. Marking is off until a seek succeeds.
+                  Couldn't confirm which frame is on screen, or the video didn't load. Marking is
+                  off until a frame is confirmed; if this stays, reload the page.
                 </p>
               )}
               {annotation.openElsewhere && (

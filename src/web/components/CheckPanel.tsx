@@ -49,12 +49,7 @@ export function CheckPanel(props: CheckPanelProps) {
             ? `${left} ${left === 1 ? 'mark needs' : 'marks need'} checking. Marks made while the video plays can be a few frames late.`
             : 'Every boundary is checked.'}{' '}
         {left > 0 && (
-          <button
-            type="button"
-            className="check-button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => props.onRun('accept')}
-          >
+          <button type="button" className="check-button" onClick={() => props.onRun('accept')}>
             {checking ? 'Accept, go to the next' : 'Check the next mark'}{' '}
             <kbd>{keysOf('accept')}</kbd>
           </button>
@@ -63,7 +58,6 @@ export function CheckPanel(props: CheckPanelProps) {
           <button
             type="button"
             className="check-warning"
-            onMouseDown={(event) => event.preventDefault()}
             onClick={() => props.onVisit(short[0]!.start)}
           >
             {short.length} very short {short.length === 1 ? 'part' : 'parts'}: show
@@ -73,12 +67,7 @@ export function CheckPanel(props: CheckPanelProps) {
           <span className="check-warning">
             This {run.state === 'keep' ? 'kept' : 'cut'} part lasts only{' '}
             {durationSeconds(stopNs(frames, run.end) - frameNs(frames, run.start)).toFixed(2)} s.{' '}
-            <button
-              type="button"
-              className="check-warning"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => props.onRemove(run)}
-            >
+            <button type="button" className="check-warning" onClick={() => props.onRemove(run)}>
               Remove it
             </button>
           </span>

@@ -37,7 +37,7 @@ function setup(frame: number, playing: boolean, canEdit = true) {
     canEdit: () => canEdit && editor.getState().history.gestureBase === null,
     sound: () => false,
     zoom: (how: string) => void zooms.push(how),
-    toggleHelp: () => {},
+    toggleCommandMenu: () => {},
     submit: () => {},
     noTask: () => {},
     needsReview: () => {},
