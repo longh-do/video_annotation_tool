@@ -1,10 +1,12 @@
 /** A head camera video that fails to load: nothing can be marked, and the screen says so. */
 import { expect, test } from '@playwright/test';
 import type { RecordingResponse } from '../../src/core/api-types.ts';
-import { savedAnnotation } from './server-state.ts';
+import { resetAll, savedAnnotation } from './server-state.ts';
 import { SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
 const recording = SYNTHETIC_RECORDINGS[3] as SyntheticRecording;
+
+test.beforeEach(({ request }) => resetAll(request));
 
 test('a head video that fails to load turns marking off, with a banner', async ({ page }) => {
   const response = await page.request.get(`/api/recordings/${recording.id}`);
