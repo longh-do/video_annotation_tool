@@ -89,6 +89,7 @@ The end-to-end tests need ffmpeg: they generate small variable-frame-rate clips 
 
 - Marking needs Chrome or Edge: only they report each presented video frame reliably. Other browsers can watch.
 - A mark made during playback is the last frame the browser reported showing: in test runs it was up to 3 frames behind the picture, never ahead (the end-to-end test allows up to 5). That is why live marks *need a check* and the check pass exists; marks made while paused are exact.
+- With a gripper camera shown large, a mark is still the head camera's frame, but the large picture is only kept within 0.25 s × speed of it (after falling behind it may run up to 0.5 s × speed ahead), so a live mark judged on it can land that much early or late; on the test clips it stayed within 6 frames.
 - Single-part camera videos only (none of the recordings has more); the data model already supports parts.
 - One local annotator per server: leases, review queues and dashboards are described in [docs/scaling.md](docs/scaling.md), not built.
 - No automatic start/stop detection or suggestions, by request: annotators decide from the video, following the task's guide ([template](docs/task-guide-template.md)).
