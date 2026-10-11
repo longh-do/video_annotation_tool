@@ -156,14 +156,9 @@ export interface Effort {
   readonly undos: number;
 }
 
-export interface Sidecar {
+/** The sidecar as the client sends it: the boundaries and the session's numbers. */
+export interface SidecarDraft {
   readonly schema_version: 1;
-  readonly tool_version: string;
-  readonly guideline_version: string | null;
-  readonly annotator_id: string;
-  /** Assigned by the server on each save, with `saved_at`. */
-  readonly revision: number;
-  readonly saved_at: string;
   readonly frame_count: number;
   readonly boundaries: readonly SidecarBoundary[];
   readonly review_reason: ReviewReason | null;
@@ -171,8 +166,15 @@ export interface Sidecar {
   readonly effort: Effort;
 }
 
-/** The sidecar as the client sends it; the server adds the revision and save time. */
-export type SidecarDraft = Omit<Sidecar, 'revision' | 'saved_at'>;
+/** The saved sidecar: the draft plus what only the server can vouch for. */
+export interface Sidecar extends SidecarDraft {
+  readonly revision: number;
+  readonly saved_at: string;
+  readonly annotator_id: string;
+  /** The guideline the annotator worked from (a content hash). */
+  readonly guideline_version: string | null;
+  readonly tool_version: string;
+}
 
 export function sidecarBoundaries(t: Timeline, frames: FrameMap): SidecarBoundary[] {
   assertSameFrames(t, frames);
@@ -183,13 +185,17 @@ export function sidecarBoundaries(t: Timeline, frames: FrameMap): SidecarBoundar
 export function validateSidecarDraft(value: unknown, frames: FrameMap): string[] {
   if (!isRecord(value)) return ['the sidecar must be a JSON object'];
   const problems: string[] = [];
+  const expected = [
+    'schema_version',
+    'frame_count',
+    'boundaries',
+    'review_reason',
+    'resume',
+    'effort',
+  ];
+  const unexpected = Object.keys(value).filter((key) => !expected.includes(key));
+  if (unexpected.length > 0) problems.push(`unexpected fields: ${unexpected.join(', ')}`);
   if (value.schema_version !== 1) problems.push('schema_version must be 1');
-  for (const field of ['tool_version', 'annotator_id'] as const) {
-    if (typeof value[field] !== 'string') problems.push(`${field} must be a string`);
-  }
-  if (value.guideline_version !== null && typeof value.guideline_version !== 'string') {
-    problems.push('guideline_version must be a string or null');
-  }
   if (value.review_reason !== null && !isOneOf(REVIEW_REASONS, value.review_reason)) {
     problems.push(`review_reason must be null or one of ${REVIEW_REASONS.join(', ')}`);
   }

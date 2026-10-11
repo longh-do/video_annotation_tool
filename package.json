@@ -9,6 +9,10 @@
   },
   "packageManager": "pnpm@10.32.1",
   "scripts": {
+    "ingest": "node scripts/ingest.ts",
+    "dev": "node src/server/main.ts --dev",
+    "build": "vite build",
+    "start": "node src/server/main.ts",
     "lint": "biome check && tsc --build",
     "format": "biome check --write",
     "test": "vitest run",
@@ -18,8 +22,16 @@
     "@biomejs/biome": "2.5.15",
     "@playwright/test": "1.64.0",
     "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
     "fast-check": "4.10.2",
     "typescript": "7.0.2",
+    "vite": "8.3.4",
     "vitest": "5.0.3"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   }
 }

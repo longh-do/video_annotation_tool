@@ -203,9 +203,6 @@ describe('validateSidecarDraft', () => {
   t = setStateFrom(t, 3, 'cut', 'nudge');
   const draft: SidecarDraft = {
     schema_version: 1,
-    tool_version: '0.1.0',
-    guideline_version: 'sha256:abc',
-    annotator_id: 'a1',
     frame_count: 5,
     boundaries: sidecarBoundaries(t, frames),
     review_reason: null,
@@ -218,6 +215,7 @@ describe('validateSidecarDraft', () => {
   });
 
   test.each([
+    ['a field the server stamps', { annotator_id: 'mallory' }, /unexpected fields: annotator_id/],
     ['a different frame count', { frame_count: 6 }, /frame_count must be 5/],
     ['an unknown review reason', { review_reason: 'bored' }, /review_reason/],
     ['a missing playback rate', { resume: { frame: 0 } }, /resume/],
