@@ -56,12 +56,7 @@ try {
   await pause(1200);
   await page.keyboard.press('Enter');
   await pause(1800);
-  await caption(page, 'Click the frame where the task really starts, then Enter');
-  await page.locator('.filmstrip .thumb').nth(6).click(); // half a second before the mark
-  await pause(1500);
-  await page.keyboard.press('Enter');
-  await pause(1500);
-  await caption(page, ', and . move a boundary a frame at a time');
+  await caption(page, ', and . put it on the exact frame, then Enter accepts it');
   for (let i = 0; i < 6; i++) {
     await page.keyboard.press('Comma');
     await pause(250);

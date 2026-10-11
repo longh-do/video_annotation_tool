@@ -44,8 +44,8 @@ export interface EditorState {
   /** Frame of the selected boundary. View state: undo never records it. */
   readonly selected: number | null;
   /**
-   * Where the selected boundary was when work on it began. The check filmstrip is laid out
-   * around it and stays put while the boundary moves, so frames don't slide under the pointer.
+   * Where the selected boundary was when work on it began: one visit of the check pass, for its
+   * timing, however far the boundary moves meanwhile.
    */
   readonly anchor: number | null;
   /**
@@ -67,7 +67,7 @@ export type EditorAction =
       readonly state: State;
       readonly origin: Origin;
     }
-  /** A drag or a filmstrip click on a known boundary. */
+  /** A drag of a known boundary. */
   | {
       readonly type: 'move';
       readonly index: number;

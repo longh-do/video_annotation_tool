@@ -505,13 +505,9 @@ kbd {
   pointer-events: none;
 }
 
-/* Check pass: status, and the filmstrip around the boundary being checked. Its height is
-   reserved, so the video doesn't jump when the filmstrip comes and goes. */
+/* Check pass: one line, there once something is marked. */
 .check {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 112px;
+  padding-top: 2px;
 }
 
 .check-status {
@@ -539,58 +535,6 @@ kbd {
 button.check-warning {
   padding: 0 8px;
   border-color: var(--unchecked);
-}
-
-.filmstrip {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-/* Named for screen readers only. */
-.filmstrip legend {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-
-.filmstrip-frames {
-  display: flex;
-  gap: 4px;
-}
-
-/* Thirteen thumbnails share the width, up to their natural size. */
-.thumb {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1 1 0;
-  min-width: 0;
-  max-width: 104px;
-  padding: 2px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.thumb canvas,
-.thumb-empty {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  background: #000;
-  border-radius: 3px;
-}
-
-.thumb-mark {
-  border-color: var(--unchecked);
-}
-
-.thumb-boundary {
-  border-color: var(--accent);
-  color: var(--text);
 }
 
 /* Side panel: kept intervals, the task and the general guide; its left edge resizes it. */

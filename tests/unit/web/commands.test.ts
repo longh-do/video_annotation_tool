@@ -159,14 +159,6 @@ describe('commands', () => {
     expect(boundaries(editor)).toEqual([]);
   });
 
-  test('a thumbnail click moves the selected boundary there and shows it', () => {
-    const { editor, run, seeks, pointer } = setup(40, true);
-    run('keep');
-    pointer.pick(31);
-    expect(boundaries(editor)[0]).toMatchObject({ frame: 31, origin: 'placed', checked: true });
-    expect(seeks.at(-1)).toBe(31);
-  });
-
   test('a drag shows the frame under the pointer, and is one undo step or nothing at all', () => {
     const { editor, run, seeks, pointer } = setup(40, false);
     run('keep');
@@ -187,10 +179,9 @@ describe('commands', () => {
     expect(seeks.at(-1)).toBe(40);
   });
 
-  test('no thumbnail click, drag, badge or menu edits while editing is off', () => {
+  test('no drag, badge or menu edits while editing is off', () => {
     const { editor, pointer } = setup(40, false, false);
     editor.dispatch({ type: 'mark', frame: 40, state: 'keep', origin: 'live' });
-    pointer.pick(30);
     pointer.dragStart(0);
     pointer.drag(0, 50);
     pointer.dragEnd();

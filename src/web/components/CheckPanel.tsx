@@ -6,20 +6,15 @@ import type { Segment, Timeline } from '../../core/timeline.ts';
 import { type Command, keysOf } from '../keymap.ts';
 import type { Player } from '../player/player.ts';
 import { usePlayer } from '../player/use-player.ts';
-import { Filmstrip, type Pictures } from './Filmstrip.tsx';
 
 /** A keep or cut shorter than this is probably a double tap or a slip. */
 const SHORT_NS = 500_000_000n;
 
 interface CheckPanelProps {
   readonly player: Player | null;
-  /** The filmstrip's pictures: the camera shown big. */
-  readonly pictures: Pictures | null;
   readonly timeline: Timeline;
   readonly frames: FrameMap;
   readonly selected: number | null;
-  readonly anchor: number | null;
-  readonly onPick: (frame: number) => void;
   readonly onVisit: (frame: number) => void;
   /** Takes a very short run away: it gets the state around it. */
   readonly onRemove: (run: Segment) => void;
@@ -27,13 +22,12 @@ interface CheckPanelProps {
 }
 
 /**
- * The check pass, under the video: how many marks still need checking (marks made while the
- * video played land a few frames late), very short runs to look at, and while paused on a
- * boundary, the frames around it. The button does what Enter does.
+ * The check pass, one line under the video, there only when it has something to say: how many
+ * marks still need checking (marks made while the video played land a few frames late) and very
+ * short runs to look at. The button does what Enter does.
  */
 export function CheckPanel(props: CheckPanelProps) {
-  const { player, timeline, frames, selected, anchor } = props;
-  const paused = usePlayer(player, (s) => !s.playing);
+  const { player, timeline, frames, selected } = props;
   const onSelected = usePlayer(player, (s) => !s.playing && s.frame === selected);
   const left = useMemo(() => boundariesToCheck(timeline).length, [timeline]);
   const short = useMemo(() => shortSegments(timeline, frames, SHORT_NS), [timeline, frames]);
@@ -45,11 +39,12 @@ export function CheckPanel(props: CheckPanelProps) {
   const boundary = timeline.boundaries.find((b) => b.frame === selected);
   const checking = onSelected && boundary !== undefined && !boundary.checked;
 
+  if (timeline.boundaries.length === 0) return null;
   return (
     <section className="check" aria-label="Check pass">
       <p className="check-status">
         {checking
-          ? `${left} ${left === 1 ? 'mark needs' : 'marks need'} checking. Move this one with , and . or a click on a frame below.`
+          ? `${left} ${left === 1 ? 'mark needs' : 'marks need'} checking. Put this one on its exact frame with , and . (or drag it on the timeline).`
           : left > 0
             ? `${left} ${left === 1 ? 'mark needs' : 'marks need'} checking: made while the video played, they may be a few frames late.`
             : timeline.boundaries.length > 0 && 'Every boundary is checked.'}{' '}
@@ -89,16 +84,6 @@ export function CheckPanel(props: CheckPanelProps) {
           </span>
         )}
       </p>
-      {paused && selected !== null && anchor !== null && props.pictures && (
-        <Filmstrip
-          key={`${props.pictures.camera}:${anchor}`}
-          pictures={props.pictures}
-          frames={frames}
-          anchor={anchor}
-          boundary={selected}
-          onPick={props.onPick}
-        />
-      )}
     </section>
   );
 }

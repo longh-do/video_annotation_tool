@@ -48,7 +48,7 @@ export function decodeBarcode(luma: readonly number[]): number | null {
 
 /**
  * The frame index shown by the <video> matching `selector`, or by a <canvas> holding a scaled-down
- * copy of a frame (a filmstrip thumbnail); null if unreadable.
+ * copy of a frame; null if unreadable.
  */
 export async function shownFrame(page: Page, selector: string): Promise<number | null> {
   // The page can't import decodeBarcode, so it only samples the pixels and Node decodes them.

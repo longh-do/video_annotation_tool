@@ -7,7 +7,7 @@ import { SeekQueue } from '../player/seek-queue.ts';
 import { usePlayer } from '../player/use-player.ts';
 
 /** Farther than this from every frame of the camera means a gap in its recording. */
-export const MAX_SKEW_NS = 150_000_000n;
+const MAX_SKEW_NS = 150_000_000n;
 /**
  * During playback, a camera this far off (in seconds of its video, per 1× of speed) is put back in
  * place. Faster playback moves further between two looks, so the margin grows with the speed.

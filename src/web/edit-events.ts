@@ -29,7 +29,7 @@ export function editEvent(
       };
     case 'move':
       // A drag's every step is not worth an event; its end is.
-      return action.origin === 'drag' ? null : adjusted('filmstrip', was, now);
+      return action.origin === 'drag' ? null : adjusted('placed', was, now);
     case 'nudge':
       return adjusted('nudge', was, now);
     case 'drag-end':

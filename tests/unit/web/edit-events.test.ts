@@ -63,7 +63,7 @@ describe('edit events', () => {
       ['boundary_set', { frame: 100, state: 'keep', origin: 'live' }],
       ['boundary_set', { frame: 50, state: 'keep', origin: 'paused' }],
       ['boundary_adjusted', { how: 'nudge', from: 50, to: 48 }],
-      ['boundary_adjusted', { how: 'filmstrip', from: 100, to: 120 }],
+      ['boundary_adjusted', { how: 'placed', from: 100, to: 120 }],
     ]);
   });
 
@@ -80,7 +80,7 @@ describe('edit events', () => {
     ]);
   });
 
-  test('a thumbnail click is a filmstrip adjustment; selecting logs nothing', () => {
+  test('a boundary put on a chosen frame is logged as placed; selecting logs nothing', () => {
     const log = events([
       { type: 'mark', frame: 40, state: 'keep', origin: 'paused' },
       { type: 'select', frame: null },
@@ -88,6 +88,6 @@ describe('edit events', () => {
       { type: 'move', index: 0, frame: 33, origin: 'placed' },
     ]);
     expect(log.map((e) => e.event)).toEqual(['boundary_set', 'boundary_adjusted']);
-    expect(log[1]?.fields).toEqual({ how: 'filmstrip', from: 40, to: 33 });
+    expect(log[1]?.fields).toEqual({ how: 'placed', from: 40, to: 33 });
   });
 });

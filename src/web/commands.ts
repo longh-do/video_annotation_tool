@@ -1,6 +1,6 @@
 /**
- * What each key does, and what the mouse does on the timeline and the filmstrip, under the same
- * rules. Handlers read the player and the editor at the moment of the key press, never a value
+ * What each key does, and what the mouse does on the timeline and in the interval list, under
+ * the same rules. Handlers read the player and the editor at the moment of the key press, never a value
  * captured at the last render: a held key fires faster than React renders.
  */
 import { nextToCheck } from '../core/check.ts';
@@ -123,14 +123,12 @@ export function createCommands(ctx: CommandContext): Record<Command, KeyHandler>
   };
 }
 
-/** What the mouse does: the timeline, its menu, the interval list and the filmstrip. */
+/** What the mouse does: the timeline, its menu and the interval list. */
 export interface PointerActions {
   /** Select a boundary and show it. */
   readonly goTo: (frame: number) => void;
   /** Select a kept interval (or, with null, nothing) and show `frame`, if given. */
   readonly selectInterval: (start: number | null, frame: number | null) => void;
-  /** A filmstrip thumbnail: the selected boundary moves to that frame. */
-  readonly pick: (frame: number) => void;
   /** A boundary's badge on the timeline. */
   readonly deleteBoundary: (index: number) => void;
   /** The timeline's menu: every frame in [from, to) becomes `state`. */
@@ -152,11 +150,6 @@ export function createPointerActions(ctx: CommandContext): PointerActions {
     selectInterval: (start, frame) => {
       editor.dispatch({ type: 'select-interval', start });
       if (frame !== null) ctx.player.seek(frame);
-    },
-    pick: (frame) => {
-      const index = selectedIndex(editor.getState());
-      if (!ctx.canEdit() || index < 0) return;
-      showSelected(ctx, editor.dispatch({ type: 'move', index, frame, origin: 'placed' }));
     },
     deleteBoundary: (index) => {
       if (ctx.canEdit()) editor.dispatch({ type: 'delete-boundary', index });

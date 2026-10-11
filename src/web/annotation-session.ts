@@ -46,7 +46,7 @@ function howChecked(action: EditorAction): string | null {
     case 'nudge':
       return 'nudge';
     case 'move':
-      return action.origin === 'drag' ? 'drag' : 'filmstrip';
+      return action.origin === 'drag' ? 'drag' : 'placed';
     default:
       return null;
   }

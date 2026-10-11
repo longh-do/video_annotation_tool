@@ -21,7 +21,7 @@ export type State = (typeof STATES)[number];
 export const ORIGINS = [
   'live', // set from the playhead during playback: late by the annotator's reaction time
   'paused', // set with S or D while paused
-  'placed', // put on a chosen frame: a filmstrip click, or an edge of a range set from the menu
+  'placed', // put on a chosen frame: an edge of a range set from the menu
   'drag', // dragged on the timeline
   'nudge', // stepped frame by frame
 ] as const;
@@ -85,8 +85,8 @@ export function setStateFrom(t: Timeline, frame: number, state: State, origin: O
 }
 
 /**
- * Nudge, drag and filmstrip clicks. Clamped between the neighbours, never past them. Choosing the
- * frame a live mark already sits on confirms it, like Enter in the check pass.
+ * Nudge and drag. Clamped between the neighbours, never past them. Choosing the frame a live
+ * mark already sits on confirms it, like Enter in the check pass.
  */
 export function moveBoundary(t: Timeline, index: number, frame: number, origin: Origin): Timeline {
   const boundary = boundaryAt(t, index);

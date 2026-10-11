@@ -2,7 +2,7 @@
 
 A browser tool for marking which parts of untrimmed, multi-camera robot recordings to **keep**, fast and frame-exact.
 
-Annotators watch at 2× and press **S** (or click **Start**) where a task starts and **D** (**Stop**) where it stops. Marks made while the video plays land late by the annotator's reaction time, so they show as *needs check* and a short **check pass** visits each of them: the video stops on the mark, a filmstrip shows the 1.5 s before it, and one key or click puts it on the exact frame. **⌘↵** (or **Submit**) saves and the next recording, already fetched, opens at once. Each recording produces one JSON file of kept intervals in source-clock nanoseconds, so the same cuts apply to every synchronized stream.
+Annotators watch at 2× and press **S** (or click **Start**) where a task starts and **D** (**Stop**) where it stops. Marks made while the video plays land late by the annotator's reaction time, so they show as *needs check* and a short **check pass** visits each of them: the video stops on the mark, and `,` `.` (or a drag on the zoomed-in timeline) put it on the exact frame. **⌘↵** (or **Submit**) saves and the next recording, already fetched, opens at once. Each recording produces one JSON file of kept intervals in source-clock nanoseconds, so the same cuts apply to every synchronized stream.
 
 ![The tool on a synthetic test clip, during the check pass](docs/screenshot.png)
 
@@ -44,7 +44,7 @@ pnpm dev                                                            # then open 
 | **N** | No useful task (cut everything; asks first) |
 | **Q** | Needs review: a reason (1–4) and a note |
 
-On a Windows or Linux keyboard ⌘ is Ctrl. Everything also works with the mouse alone: **Start**, **Stop**, play and the speed list sit above the timeline; **Check the next mark** and the filmstrip do the check pass; **Submit** (with *No useful task* and *Needs review* beside it), undo and redo are at the top. On the timeline, click to jump (a click on an interval selects it), drag an interval's edge to move it, click a boundary's badge to delete it, right-click an interval to merge or delete it, and pinch or ⌘-scroll to zoom. A click on a gripper camera shows it large; marks are always saved on the head camera's frames.
+On a Windows or Linux keyboard ⌘ is Ctrl. Everything also works with the mouse alone: **Start**, **Stop**, play and the speed list sit above the timeline; **Check the next mark** does the check pass; **Submit** (with *No useful task* and *Needs review* beside it), undo and redo are at the top. On the timeline, click to jump (a click on an interval selects it), drag an interval's edge to move it, click a boundary's badge to delete it, right-click an interval to merge or delete it, and pinch or ⌘-scroll to zoom. A click on a gripper camera shows it large; marks are always saved on the head camera's frames.
 
 ## Saved format
 

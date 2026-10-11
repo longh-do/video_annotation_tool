@@ -91,11 +91,10 @@ test('keyboard only: mark at 2×, then the check pass puts each rough mark on it
   ]);
   await expect(page.locator('.check-status')).toContainText('2 marks need checking');
 
-  // Enter lands on the first rough mark, paused, with the frames before it in the filmstrip.
+  // Enter lands on the first rough mark, paused, and says how to put it on its frame.
   await page.keyboard.press('Enter');
   await expectShown(page, start!.frame);
-  await expect(page.locator('.thumb-mark')).toHaveText('your mark');
-  await expect(page.locator('.thumb-boundary')).toHaveCount(1);
+  await expect(page.locator('.check-status')).toContainText('exact frame');
 
   // ← steps through exact frames; , nudges the boundary a frame earlier and shows it.
   await page.keyboard.press('ArrowLeft');
@@ -122,33 +121,6 @@ test('keyboard only: mark at 2×, then the check pass puts each rough mark on it
       end_ns: String(frameNs(frames, end!.frame)),
     },
   ]);
-});
-
-test('every filmstrip thumbnail shows its frame; clicking one moves the boundary there', async ({
-  page,
-}) => {
-  await open(page, 120);
-  await page.keyboard.press('s');
-  await savedWhen(page, (b) => b.length === 1);
-  const thumbs = page.locator('.filmstrip .thumb');
-  await expect(thumbs.first()).toBeVisible();
-  const count = await thumbs.count();
-  expect(count).toBeGreaterThanOrEqual(10);
-  for (let i = 0; i < count; i++) {
-    const frame = Number((await thumbs.nth(i).getAttribute('title'))?.match(/\d+$/)?.[0]);
-    await expect
-      .poll(() => shownFrame(page, `.filmstrip .thumb:nth-of-type(${i + 1}) canvas`))
-      .toBe(frame);
-  }
-
-  const first = Number((await thumbs.first().getAttribute('title'))?.match(/\d+$/)?.[0]);
-  expect(first).toBeLessThan(120);
-  await thumbs.first().click();
-  await expectShown(page, first);
-  const [moved] = await savedWhen(page, (b) => b[0]?.frame === first);
-  expect(moved).toEqual({ frame: first, state: 'keep', origin: 'placed', checked: true });
-  // The strip stays where it was, so the mark's thumbnail is still there to go back to.
-  await expect(page.locator('.thumb-mark')).toHaveAttribute('title', /frame 120$/);
 });
 
 test('boundary edits undo and redo exactly, step by step', async ({ page }) => {
@@ -245,7 +217,7 @@ test('a very short run is pointed out, and one click takes it away', async ({ pa
   await expectShown(page, 200);
   await expect(page.locator('.check-status')).toContainText('This keep lasts only');
   await page.getByRole('button', { name: 'Remove it' }).click();
-  await expect(page.locator('.check-status')).not.toContainText('short');
+  await expect(page.locator('.check-warning')).toHaveCount(0);
   await expect.poll(async () => (await saved(page))?.annotation.keep_intervals).toEqual([]);
 });
 
@@ -274,51 +246,4 @@ test('the interval list selects an interval; the task guide is one tab away', as
   await page.keyboard.press('Space');
   await expect(page.locator('.time')).not.toHaveAttribute('data-frame', '70');
   await page.keyboard.press('Space');
-});
-
-test('a long check pass keeps every filmstrip right, back to the first boundary', async ({
-  page,
-}) => {
-  // The longest clip: enough marks that the first strips' thumbnails get released.
-  const long = SYNTHETIC_RECORDINGS[0] as SyntheticRecording;
-  const errors: string[] = [];
-  page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto(`/#${long.id}/10`);
-  await expect(page.locator('.time[data-frame="10"]')).toBeVisible();
-  try {
-    for (let i = 0; i < 24; i++) {
-      const frame = 10 + i * 23;
-      await page.evaluate((hash) => {
-        location.hash = hash;
-      }, `${long.id}/${frame}`);
-      await expect(page.locator(`.time[data-frame="${frame}"]`)).toBeVisible();
-      await page.keyboard.press(i % 2 === 0 ? 's' : 'd');
-      await expect(page.locator('.thumb-mark')).toHaveAttribute(
-        'title',
-        new RegExp(`frame ${frame}$`),
-      );
-      // Every thumbnail grabbed before going on, so the cache really fills up.
-      await expect(page.locator('.filmstrip .thumb-empty')).toHaveCount(0);
-    }
-    // Back to the first boundary: its strip's thumbnails were released long ago.
-    await page.evaluate((hash) => {
-      location.hash = hash;
-    }, `${long.id}/0`);
-    await expect(page.locator('.time[data-frame="0"]')).toBeVisible();
-    await page.keyboard.press('BracketRight');
-    await expect(page.locator('.time[data-frame="10"]')).toBeVisible();
-    const thumbs = page.locator('.filmstrip .thumb');
-    const count = await thumbs.count();
-    for (let i = 0; i < count; i++) {
-      const frame = Number((await thumbs.nth(i).getAttribute('title'))?.match(/\d+$/)?.[0]);
-      await expect
-        .poll(() => shownFrame(page, `.filmstrip .thumb:nth-of-type(${i + 1}) canvas`))
-        .toBe(frame);
-    }
-    expect(errors).toEqual([]);
-  } finally {
-    // The other specs use this recording too: clean up once the last mark is on the server.
-    await expect(page.locator('.save-chip')).toHaveAttribute('data-save', 'saved');
-    await resetAnnotation(page.request, long.id);
-  }
 });

@@ -112,8 +112,6 @@ test('a side camera plays along, shows large on a click, and marks still come fr
   await page.keyboard.press('s');
   const [mark] = await savedBoundaries(page, 1);
   expect(mark).toMatchObject({ frame, origin: 'paused' });
-  // The filmstrip shows the camera that is large.
-  await expect(page.locator('.filmstrip legend')).toHaveText(/left camera/);
   await page.keyboard.press('ControlOrMeta+z');
   await savedBoundaries(page, 0);
   await page.getByRole('button', { name: 'Show the head camera large' }).click();

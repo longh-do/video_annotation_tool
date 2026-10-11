@@ -15,15 +15,13 @@ import {
 } from 'react';
 import type { Status } from '../core/annotation.ts';
 import { boundariesToCheck } from '../core/check.ts';
-import { frameNs, nearestFrame } from '../core/frame-map.ts';
 import { keepSegments, type Segment, stateAt } from '../core/timeline.ts';
 import type { AnnotationSession } from './annotation-session.ts';
 import { type CommandContext, createCommands, createPointerActions } from './commands.ts';
-import { CameraTile, CameraView, MAX_SKEW_NS } from './components/CameraView.tsx';
+import { CameraTile, CameraView } from './components/CameraView.tsx';
 import { CheckPanel } from './components/CheckPanel.tsx';
 import { CommandMenu } from './components/CommandMenu.tsx';
 import { type BarAction, ConfirmBar } from './components/ConfirmBar.tsx';
-import type { Pictures } from './components/Filmstrip.tsx';
 import { GuidePanel } from './components/GuidePanel.tsx';
 import { IntervalList } from './components/IntervalList.tsx';
 import { ChevronIcon, RedoIcon, UndoIcon } from './components/icons.tsx';
@@ -40,7 +38,6 @@ import { clock } from './format.ts';
 import { type Command, installKeymap, type KeyHandler, keysOf, matches } from './keymap.ts';
 import { placeFromHash } from './location.ts';
 import { mosaic } from './mosaic.ts';
-import { FrameGrabber } from './player/frame-grabber.ts';
 import { DEFAULT_SPEED, Player, SKIM_SPEED } from './player/player.ts';
 import { usePlayer } from './player/use-player.ts';
 import type { LoadedRecording } from './recording.ts';
@@ -100,7 +97,6 @@ export function Workspace(props: WorkspaceProps) {
 
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
-  const [pictures, setPictures] = useState<Pictures | null>(null);
   const [view] = useState(() => new TimelineView(timelineEndUs(frames)));
   const seekFailed = usePlayer(player, (s) => s.seekFailed);
   const [showCommands, setShowCommands] = useState(false);
@@ -124,7 +120,6 @@ export function Workspace(props: WorkspaceProps) {
     0,
   );
   const largeCamera = info.cameras[largeIndex]!;
-  const largeFrames = cameraFrames[largeIndex]!;
   /** Big view first, then the others in their order. */
   const areaOf = (index: number) => {
     if (index === largeIndex) return 'main';
@@ -156,18 +151,6 @@ export function Workspace(props: WorkspaceProps) {
     setPlayer(created);
     return () => created.dispose();
   }, [video, frames]);
-
-  // The filmstrip shows the camera that is big. Its grabber, its name and how a head-camera frame
-  // maps to its frames change together, so a strip never mixes two cameras.
-  useEffect(() => {
-    const grabber = new FrameGrabber(largeCamera.videoUrl, largeFrames);
-    const pictureOf =
-      largeIndex === 0
-        ? (frame: number) => frame
-        : (frame: number) => nearestFrame(largeFrames, frameNs(frames, frame), MAX_SKEW_NS);
-    setPictures({ grabber, camera: largeCamera.label, pictureOf });
-    return () => grabber.dispose();
-  }, [largeCamera, largeFrames, largeIndex, frames]);
 
   // Open at the frame a link names, else where this recording was left. An applied link is
   // trimmed from the URL, so a reload reopens where the annotator was, not at the old link. The
@@ -615,13 +598,10 @@ export function Workspace(props: WorkspaceProps) {
         <section className="controls">
           <CheckPanel
             player={player}
-            pictures={pictures}
             timeline={present}
             frames={frames}
             selected={state.selected}
-            anchor={state.anchor}
             onVisit={(frame) => pointer?.goTo(frame)}
-            onPick={(frame) => pointer?.pick(frame)}
             onRemove={(short) =>
               pointer?.setRange(short.start, short.end, short.state === 'keep' ? 'cut' : 'keep')
             }
