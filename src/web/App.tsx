@@ -10,6 +10,7 @@ import { Journal } from './journal.ts';
 import { placeFromHash } from './location.ts';
 import { nextToAnnotate } from './queue.ts';
 import { type LoadedRecording, loadRecording, prefetchMedia } from './recording.ts';
+import { Telemetry } from './telemetry.ts';
 import { type Finished, Workspace } from './Workspace.tsx';
 
 interface Opened {
@@ -32,6 +33,7 @@ export function App() {
   const [warm, setWarm] = useState<{ id: string; videoUrl: string } | null>(null);
   const canMark = useMemo(canAnnotate, []);
   const journal = useRef<Journal | null>(null);
+  const telemetry = useRef<Telemetry | null>(null);
   const annotations = useRef(new Map<string, AnnotationSession>());
   /** Opens in progress, so that opening a recording twice at once loads it once. */
   const loading = useRef(new Map<string, Promise<Opened>>());
@@ -46,7 +48,7 @@ export function App() {
       return { recording, annotation: kept };
     }
     kept?.dispose();
-    const annotation = new AnnotationSession(recording, journal.current);
+    const annotation = new AnnotationSession(recording, journal.current, telemetry.current);
     annotations.current.set(id, annotation);
     if (annotation.recovered) setToast({ text: 'Recovered changes that had not been saved.' });
     if (annotation.discarded) {
@@ -82,6 +84,12 @@ export function App() {
       const [loaded, opened] = await Promise.all([fetchQueue(), Journal.open()]);
       if (cancelled) return;
       journal.current = opened;
+      const { annotatorId, toolVersion, guideline } = loaded.session;
+      telemetry.current = new Telemetry({
+        annotatorId,
+        toolVersion,
+        guidelineVersion: guideline?.version ?? null,
+      });
       setQueue(loaded);
       const wanted = placeFromHash().recordingId;
       const id =

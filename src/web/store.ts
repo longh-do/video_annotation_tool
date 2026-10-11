@@ -5,6 +5,7 @@
 export class Store<S, A> {
   readonly #reducer: (state: S, action: A) => S;
   readonly #listeners = new Set<() => void>();
+  readonly #observers = new Set<(action: A, before: S, after: S) => void>();
   #state: S;
 
   constructor(reducer: (state: S, action: A) => S, initial: S) {
@@ -16,9 +17,11 @@ export class Store<S, A> {
 
   /** Applies the action and returns the new state. */
   dispatch = (action: A): S => {
-    const next = this.#reducer(this.#state, action);
-    if (next !== this.#state) {
+    const before = this.#state;
+    const next = this.#reducer(before, action);
+    if (next !== before) {
       this.#state = next;
+      for (const observer of this.#observers) observer(action, before, next);
       for (const listener of this.#listeners) listener();
     }
     return next;
@@ -28,4 +31,10 @@ export class Store<S, A> {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   };
+
+  /** Like subscribe, with the action that changed the state and the states around it. */
+  observe(observer: (action: A, before: S, after: S) => void): () => void {
+    this.#observers.add(observer);
+    return () => this.#observers.delete(observer);
+  }
 }

@@ -120,13 +120,43 @@ export function Workspace(props: WorkspaceProps) {
     return () => window.removeEventListener('hashchange', followLink);
   }, [player, annotation, info.id]);
 
-  // The annotation saves where the annotator is, to reopen there on another computer.
+  // The annotation saves where the annotator is (to reopen there on another computer) and counts
+  // active time while this screen is open: playing, or keys and pointer in the last 30 s.
   useEffect(() => {
     if (!player) return;
-    return annotation.attach(() => ({
-      frame: Math.max(player.frame, 0),
-      playbackRate: player.snapshot.speed,
-    }));
+    const detach = annotation.attach({
+      place: () => ({ frame: Math.max(player.frame, 0), playbackRate: player.snapshot.speed }),
+      playing: () => player.snapshot.playing,
+    });
+    const active = () => annotation.noteInput();
+    window.addEventListener('keydown', active, { capture: true });
+    window.addEventListener('pointerdown', active, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', active, { capture: true });
+      window.removeEventListener('pointerdown', active, { capture: true });
+      detach();
+    };
+  }, [player, annotation]);
+
+  // Telemetry: when the first frame shows, and each play, pause and change of speed.
+  useEffect(() => {
+    if (!player) return;
+    const openedAt = performance.now();
+    let ready = false;
+    let playing = false;
+    let rate = 0;
+    return player.subscribe(() => {
+      const s = player.snapshot;
+      if (!ready && s.frame >= 0) {
+        ready = true;
+        annotation.log('media_ready', { load_ms: Math.round(performance.now() - openedAt) });
+      }
+      const now = s.around ? AROUND_SPEED : s.skimming ? SKIM_SPEED : s.speed;
+      if (s.playing === playing && (now === rate || !s.playing)) return;
+      playing = s.playing;
+      rate = now;
+      annotation.notePlayback(playing, rate);
+    });
   }, [player, annotation]);
 
   // Remember the place whenever the video stops, to reopen there.
