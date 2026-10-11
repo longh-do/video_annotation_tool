@@ -22,7 +22,7 @@ describe.runIf(root !== undefined && existsSync(root))('real recordings', () => 
     ingest({
       dataDir: root ?? '',
       outDir: join(await tempDir(), 'derived'),
-      guidelinePath: null,
+      tasksDir: null,
       tools: await findMediaTools(),
     }))();
 

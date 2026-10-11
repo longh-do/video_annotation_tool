@@ -1,17 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import {
-  boundaryIndexAt,
   clearAll,
   deleteBoundary,
   emptyTimeline,
-  flipSegmentAt,
   isThrough,
   keepSegments,
   markChecked,
   moveBoundary,
-  nearestBoundary,
   segments,
+  setRange,
   setStateFrom,
   stateAt,
   type Timeline,
@@ -94,16 +92,54 @@ describe('corrections', () => {
     expect(moveBoundary(live, 0, 10, 'live')).toBe(live);
   });
 
-  test('X flips the run under the playhead', () => {
-    expect(keepSegments(flipSegmentAt(t, 50))).toEqual([{ start: 10, end: 80, state: 'keep' }]);
-    expect(keepSegments(flipSegmentAt(t, 20))).toEqual([{ start: 60, end: 80, state: 'keep' }]);
+  test('deleting an interval removes both of its boundaries', () => {
+    const deleted = setRange(t, 60, 80, 'cut');
+    expect(frames(deleted)).toEqual([10, 40]);
+    expect(deleted.boundaries).toEqual(t.boundaries.slice(0, 2));
   });
 
-  test('X before the first boundary keeps from frame 0', () => {
-    expect(keepSegments(flipSegmentAt(t, 3))).toEqual([
+  test('keeping the gap between two intervals merges them', () => {
+    expect(frames(setRange(t, 40, 60, 'keep'))).toEqual([10, 80]);
+  });
+
+  test('keeping the stretch before the first interval keeps from frame 0', () => {
+    const kept = setRange(t, 0, 10, 'keep');
+    expect(keepSegments(kept)).toEqual([
       { start: 0, end: 40, state: 'keep' },
       { start: 60, end: 80, state: 'keep' },
     ]);
+    expect(kept.boundaries[0]).toEqual({
+      frame: 0,
+      state: 'keep',
+      origin: 'placed',
+      checked: true,
+    });
+  });
+
+  test('keeping the stretch after the last interval keeps to END', () => {
+    expect(keepSegments(setRange(t, 80, FRAMES, 'keep')).at(-1)).toEqual({
+      start: 60,
+      end: FRAMES,
+      state: 'keep',
+    });
+  });
+
+  test('a range inside an interval splits it, with new checked boundaries', () => {
+    const split = setRange(t, 20, 30, 'cut');
+    expect(frames(split)).toEqual([10, 20, 30, 40, 60, 80]);
+    expect(split.boundaries[2]).toEqual({
+      frame: 30,
+      state: 'keep',
+      origin: 'placed',
+      checked: true,
+    });
+  });
+
+  test('a range that changes nothing returns the same timeline', () => {
+    expect(setRange(t, 20, 30, 'keep')).toBe(t);
+    expect(setRange(empty, 0, FRAMES, 'cut')).toBe(empty);
+    expect(() => setRange(t, 20, 20, 'cut')).toThrow(RangeError);
+    expect(() => setRange(t, 20, FRAMES + 1, 'cut')).toThrow(RangeError);
   });
 
   test('deleting a boundary merges its neighbours', () => {
@@ -120,15 +156,6 @@ describe('corrections', () => {
   test('N cuts everything', () => {
     expect(keepSegments(clearAll(t))).toEqual([]);
     expect(clearAll(empty)).toBe(empty);
-  });
-
-  test('T finds the nearest boundary', () => {
-    expect(nearestBoundary(t, 0)).toBe(0);
-    expect(nearestBoundary(t, 24)).toBe(0);
-    expect(nearestBoundary(t, 25)).toBe(0);
-    expect(nearestBoundary(t, 26)).toBe(1);
-    expect(nearestBoundary(t, 99)).toBe(3);
-    expect(nearestBoundary(empty, 50)).toBe(-1);
   });
 
   test('operations reject positions outside the recording', () => {
@@ -215,17 +242,26 @@ describe('properties of every reachable timeline', () => {
     );
   });
 
-  test('X flips exactly the run under the playhead', () => {
-    const input = arb.chain((t) => fc.tuple(fc.constant(t), anyFrame(t)));
+  test('setting a range changes exactly its frames and leaves no boundary inside it', () => {
+    const input = arb.chain((t) =>
+      fc.tuple(
+        fc.constant(t),
+        anyFrame(t),
+        fc.integer({ min: 1, max: t.frameCount }),
+        fc.constantFrom('keep' as const, 'cut' as const),
+      ),
+    );
     fc.assert(
-      fc.property(input, ([t, frame]) => {
-        const start = t.boundaries[boundaryIndexAt(t, frame)]?.frame;
-        const [from, to] =
-          start === undefined ? [0, t.boundaries[0]?.frame ?? t.frameCount] : runFrom(t, start);
+      fc.property(input, ([t, a, b, state]) => {
+        const [from, to] = a < b ? [a, b] : [b - 1, a + 1];
+        const set = setRange(t, from, to, state);
         const before = frameStates(t);
-        frameStates(flipSegmentAt(t, frame)).forEach((s, f) => {
-          const flipped = before[f] === 'keep' ? 'cut' : 'keep';
-          expect(s).toBe(f >= from && f < to ? flipped : before[f]);
+        frameStates(set).forEach((s, f) => {
+          expect(s).toBe(f >= from && f < to ? state : before[f]);
+        });
+        expect(set.boundaries.some((b) => b.frame > from && b.frame < to)).toBe(false);
+        set.boundaries.forEach((b, i) => {
+          if (i > 0) expect(b.frame).toBeGreaterThan(set.boundaries[i - 1]!.frame);
         });
       }),
     );

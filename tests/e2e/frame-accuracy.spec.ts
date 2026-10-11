@@ -119,7 +119,7 @@ test('a mark made during 2× playback saves the last frame shown at the key pres
 
   await page.goto(`/#${recording.id}`);
   await expect(page.locator('.time[data-frame="0"]')).toBeVisible();
-  await page.keyboard.press('3'); // 2×
+  await expect(page.locator('.speed')).toHaveText('2×');
 
   // Two passes over the clip. Presses are spaced past the longest frame gap (101 ms of video,
   // about 50 ms at 2×), so each lands on a new frame.

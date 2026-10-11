@@ -3,12 +3,22 @@ import { useEffect } from 'react';
 export interface ToastMessage {
   readonly text: string;
   /** One follow-up, e.g. undoing what was just done. */
-  readonly action?: { readonly label: string; readonly run: () => void };
+  readonly action?: {
+    readonly label: string;
+    /** The key that does the same. */
+    readonly keys?: string;
+    readonly run: () => void;
+  };
+  /**
+   * Closes the message early, e.g. once its Undo would undo something else. Gets the closing
+   * function and returns what stops listening.
+   */
+  readonly closeWhen?: (close: () => void) => () => void;
 }
 
-const SHOWN_MS = 8000;
+const SHOWN_MS = 6000;
 
-/** A short message at the bottom of the screen that goes away by itself. */
+/** A short message at the top of the screen, clear of the timeline, that goes away by itself. */
 export function Toast({
   message,
   onClose,
@@ -21,13 +31,15 @@ export function Toast({
     const timer = setTimeout(onClose, SHOWN_MS);
     return () => clearTimeout(timer);
   }, [message, onClose]);
+  useEffect(() => message.closeWhen?.(onClose), [message, onClose]);
   const { action } = message;
   return (
     <div className="toast" role="status">
-      <span>{message.text}</span>
+      <span className="toast-text">{message.text}</span>
       {action && (
         <button
           type="button"
+          className="toast-action"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             onClose();
@@ -35,8 +47,18 @@ export function Toast({
           }}
         >
           {action.label}
+          {action.keys && <kbd>{action.keys}</kbd>}
         </button>
       )}
+      <button
+        type="button"
+        className="toast-close"
+        aria-label="Close the message"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onClose}
+      >
+        ×
+      </button>
     </div>
   );
 }

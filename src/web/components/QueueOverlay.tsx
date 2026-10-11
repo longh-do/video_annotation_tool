@@ -15,7 +15,7 @@ const STATUS: Record<QueueItem['status'], string> = {
   needs_review: 'needs review',
 };
 
-/** Every recording in the batch, to go back to one or pick another. Escape closes. */
+/** Every recording in the batch, to go back to one or pick another. Escape or a click beside it closes it. */
 export function QueueOverlay({ recordings, current, onOpen, onClose }: QueueOverlayProps) {
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => dialog.current?.focus(), []);
@@ -30,7 +30,12 @@ export function QueueOverlay({ recordings, current, onOpen, onClose }: QueueOver
   }, [onClose]);
 
   return (
-    <div className="overlay">
+    <div
+      className="overlay"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div
         ref={dialog}
         className="dialog queue"

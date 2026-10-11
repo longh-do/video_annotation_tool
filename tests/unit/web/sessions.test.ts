@@ -36,6 +36,7 @@ function server() {
             },
           ],
           thumbnails: null,
+          task: null,
         };
         return Response.json(info);
       }

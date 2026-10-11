@@ -71,6 +71,13 @@ async function expectShown(page: Page, frame: number) {
   expect(await shownFrame(page, HEAD)).toBe(frame);
 }
 
+/** The middle of a boundary's badge on the timeline, and the middle of the track below it. */
+async function badgeAt(page: Page, frame: number) {
+  const box = (await page.locator(`.tl-badge[data-frame="${frame}"]`).boundingBox())!;
+  const track = (await page.locator('.timeline').boundingBox())!;
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2, trackY: track.y + 54 };
+}
+
 // Every test starts from an empty annotation of its own recording.
 test.beforeEach(({ request }) => resetAnnotation(request, recording.id));
 
@@ -82,12 +89,15 @@ test('keyboard only: mark at 2×, then the check pass puts each rough mark on it
     ['keep', 'live', false],
     ['cut', 'live', false],
   ]);
-  await expect(page.locator('.check-status')).toContainText('2 rough marks to check');
+  await expect(page.locator('.check-status')).toContainText('2 marks need checking');
 
   // Enter lands on the first rough mark, paused, with the frames before it in the filmstrip.
   await page.keyboard.press('Enter');
   await expectShown(page, start!.frame);
-  await expect(page.locator('.thumb-mark')).toHaveText('mark');
+  await expect(page.locator('.thumb-mark')).toHaveText('your mark');
+  await expect(page.locator('.filmstrip legend')).toContainText(
+    'Click the frame where the task really starts',
+  );
   await expect(page.locator('.thumb-boundary')).toHaveCount(1);
 
   // ← steps through exact frames; , nudges the boundary a frame earlier and shows it.
@@ -144,26 +154,6 @@ test('every filmstrip thumbnail shows its frame; clicking one moves the boundary
   await expect(page.locator('.thumb-mark')).toHaveAttribute('title', /frame 120$/);
 });
 
-test('/ plays a second either side of the selected boundary, then comes back to it', async ({
-  page,
-}) => {
-  await open(page, 150);
-  await page.keyboard.press('s');
-  await savedWhen(page, (b) => b.length === 1);
-  await page.keyboard.press('Slash');
-  await expect(page.locator('.time')).not.toHaveAttribute('data-frame', '150');
-  // Two seconds of video at half speed, then back.
-  await expect(page.locator('.time[data-frame="150"]')).toBeVisible({ timeout: 10_000 });
-  await expectShown(page, 150);
-  await expect(page.locator('.speed')).toHaveText('2×');
-  expect(
-    await page.evaluate((css) => document.querySelector<HTMLVideoElement>(css)!.paused, HEAD),
-  ).toBe(true);
-  expect(
-    await page.evaluate((css) => document.querySelector<HTMLVideoElement>(css)!.playbackRate, HEAD),
-  ).toBe(2);
-});
-
 test('boundary edits undo and redo exactly, step by step', async ({ page }) => {
   await open(page, 40);
   const states: Boundary[][] = [[]];
@@ -194,29 +184,27 @@ test('boundary edits undo and redo exactly, step by step', async ({ page }) => {
   );
   await go(['BracketLeft'], 120);
   await step(() => page.keyboard.press('Comma')); // 120 → 119
-  await go(Array(5).fill('ArrowLeft'), 114);
-  await step(() => page.keyboard.press('t')); // the nearest boundary (119) moves to 114
-  await go(['BracketLeft', 'BracketLeft'], 40);
-  await step(() => page.keyboard.press('x')); // the keep from 40 becomes a cut
-  await go(['BracketRight'], 80);
-  await step(() => page.keyboard.press('Backspace')); // the cut from 80 goes
   await step(async () => {
-    // Drag the keep from 114 a little to the left on the detail timeline.
-    const handle = page.locator('.detail .handle[data-frame="114"]');
-    const box = (await handle.boundingBox())!;
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    // Right-click the first interval and merge it with the next: the cut from 80 to 119 goes.
+    const [from, to] = [await badgeAt(page, 40), await badgeAt(page, 80)];
+    await page.mouse.click((from.x + to.x) / 2, from.trackY, { button: 'right' });
+    await page.getByRole('menuitem', { name: 'Merge with the next interval' }).click();
+  });
+  await step(async () => {
+    // Drag the start of the interval to the right by its badge.
+    const badge = await badgeAt(page, 40);
+    await page.mouse.move(badge.x, badge.y);
     await page.mouse.down();
-    await page.mouse.move(box.x - 30, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.move(badge.x + 30, badge.y, { steps: 5 });
     await page.mouse.up();
   });
+  // A click on the stop's badge deletes it: the keep runs to the end.
+  await step(() => page.locator('.tl-badge[data-frame="152"]').click());
 
-  expect(states.at(-1)!.map((b) => [b.frame, b.state])).toEqual([
-    [40, 'cut'],
-    [states.at(-1)![1]!.frame, 'keep'],
-    [152, 'cut'],
-  ]);
-  expect(states.at(-1)![1]!.frame).toBeLessThan(114);
-  expect(states.at(-1)![1]!.origin).toBe('drag');
+  const last = states.at(-1)!;
+  expect(last.map((b) => b.state)).toEqual(['keep']);
+  expect(last[0]!.frame).toBeGreaterThan(40);
+  expect(last[0]!.origin).toBe('drag');
 
   for (let i = states.length - 2; i >= 0; i--) {
     await page.keyboard.press('ControlOrMeta+z');
@@ -233,22 +221,22 @@ test('Escape during a drag puts the boundary back', async ({ page }) => {
   await page.keyboard.press('s');
   const before = await savedWhen(page, (b) => b.length === 1);
   const revision = (await saved(page))!.revision;
-  const handle = page.locator('.detail .handle[data-frame="100"]');
-  const box = (await handle.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  // Grab the boundary's edge on the track, not its badge.
+  const badge = await badgeAt(page, 100);
+  await page.mouse.move(badge.x, badge.trackY);
   await page.mouse.down();
-  await page.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 5 });
-  await expect(page.locator('.detail .handle[data-frame="100"]')).toHaveCount(0);
+  await page.mouse.move(badge.x + 60, badge.trackY, { steps: 5 });
+  await expect(page.locator('.tl-badge[data-frame="100"]')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page.mouse.up();
   await expectShown(page, 100);
-  await expect(page.locator('.detail .handle-selected')).toHaveAttribute('data-frame', '100');
+  await expect(page.locator('.tl-badge-selected')).toHaveAttribute('data-frame', '100');
   await page.waitForTimeout(700);
   expect((await saved(page))!.revision).toBe(revision);
   expect(boundariesOf(await saved(page))).toEqual(before);
 });
 
-test('a very short run is pointed out, and X flips it away', async ({ page }) => {
+test('a very short run is pointed out, and one click takes it away', async ({ page }) => {
   await open(page, 200);
   await page.keyboard.press('s');
   for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
@@ -259,12 +247,12 @@ test('a very short run is pointed out, and X flips it away', async ({ page }) =>
   await page.keyboard.press('BracketLeft');
   await expectShown(page, 200);
   await expect(page.locator('.check-status')).toContainText('This keep lasts only');
-  await page.keyboard.press('x');
+  await page.getByRole('button', { name: 'Remove it' }).click();
   await expect(page.locator('.check-status')).not.toContainText('short');
   await expect.poll(async () => (await saved(page))?.annotation.keep_intervals).toEqual([]);
 });
 
-test('the interval list jumps to an interval; the guideline is one tab away', async ({ page }) => {
+test('the interval list selects an interval; the task guide is one tab away', async ({ page }) => {
   await open(page, 60);
   await page.keyboard.press('s');
   for (let i = 0; i < 3; i++) await page.keyboard.press('Shift+ArrowRight');
@@ -276,10 +264,11 @@ test('the interval list jumps to an interval; the guideline is one tab away', as
   await expect(intervals).toHaveCount(1);
   await intervals.first().click();
   await expectShown(page, 60);
-  await expect(page.locator('.detail .handle-selected')).toHaveAttribute('data-frame', '60');
+  await expect(intervals.first()).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.tl-badge-selected')).toHaveCount(0);
 
-  await page.getByRole('tab', { name: 'Guideline' }).click();
-  const guideline = page.getByRole('tabpanel', { name: 'Guideline' });
+  await page.getByRole('tab', { name: 'Task' }).click();
+  const guideline = page.getByRole('tabpanel', { name: 'Task' });
   await expect(guideline.locator('h1')).toBeVisible();
   // Neither the panel nor a link in it takes the keyboard.
   await page.keyboard.press('Shift+ArrowRight');
@@ -288,49 +277,6 @@ test('the interval list jumps to an interval; the guideline is one tab away', as
   await page.keyboard.press('Space');
   await expect(page.locator('.time')).not.toHaveAttribute('data-frame', '70');
   await page.keyboard.press('Space');
-});
-
-test('/ right after Enter plays the second before the mark, not just after it', async ({
-  page,
-}) => {
-  const [start] = await markLive(page);
-  // Every frame the readout shows over the next 1.5 s.
-  const seen = page.evaluate(
-    () =>
-      new Promise<number[]>((resolve) => {
-        const time = document.querySelector('.time')!;
-        const frames: number[] = [];
-        const observer = new MutationObserver(() =>
-          frames.push(Number(time.getAttribute('data-frame'))),
-        );
-        observer.observe(time, { attributes: true, attributeFilter: ['data-frame'] });
-        setTimeout(() => {
-          observer.disconnect();
-          resolve(frames);
-        }, 1500);
-      }),
-  );
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('Slash');
-  const before = (await seen).filter((frame) => frame < start!.frame);
-  expect(new Set(before).size).toBeGreaterThanOrEqual(10);
-  await expect(page.locator(`.time[data-frame="${start!.frame}"]`)).toBeVisible({
-    timeout: 10_000,
-  });
-});
-
-test('Enter while / replays accepts the mark at once and goes to the next', async ({ page }) => {
-  const [start, end] = await markLive(page);
-  await page.keyboard.press('Enter');
-  await expectShown(page, start!.frame);
-  await page.keyboard.press('Slash');
-  await expect(page.locator('.speed')).toHaveText('0.5× replay');
-  await page.waitForTimeout(400);
-  await page.keyboard.press('Enter');
-  await expectShown(page, end!.frame);
-  await expect(page.locator('.speed')).toHaveText('2×');
-  const [accepted] = await savedWhen(page, (b) => b[0]?.checked === true);
-  expect(accepted).toMatchObject({ frame: start!.frame, origin: 'live', checked: true });
 });
 
 test('a long check pass keeps every filmstrip right, back to the first boundary', async ({
@@ -357,7 +303,12 @@ test('a long check pass keeps every filmstrip right, back to the first boundary'
       // Every thumbnail grabbed before going on, so the cache really fills up.
       await expect(page.locator('.filmstrip .thumb-empty')).toHaveCount(0);
     }
-    await page.locator('.intervals .interval').first().click();
+    // Back to the first boundary: its strip's thumbnails were released long ago.
+    await page.evaluate((hash) => {
+      location.hash = hash;
+    }, `${long.id}/0`);
+    await expect(page.locator('.time[data-frame="0"]')).toBeVisible();
+    await page.keyboard.press('BracketRight');
     await expect(page.locator('.time[data-frame="10"]')).toBeVisible();
     const thumbs = page.locator('.filmstrip .thumb');
     const count = await thumbs.count();

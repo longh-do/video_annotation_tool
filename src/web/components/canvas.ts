@@ -1,5 +1,5 @@
 /**
- * Gets a timeline canvas ready to draw: the backing store sized to the element (resized only when
+ * Gets the timeline canvas ready to draw: the backing store sized to the element (resized only when
  * the size changed, since resizing reallocates it), a context in CSS pixels, and the theme
  * colours read once per drawing.
  */
@@ -19,13 +19,14 @@ export function prepareCanvas(canvas: HTMLCanvasElement) {
   const style = getComputedStyle(canvas);
   const color = (name: string) => style.getPropertyValue(name);
   const colors = {
-    track: color('--track'),
-    keepBand: color('--keep-band'),
     muted: color('--muted'),
     text: color('--text'),
-    rough: color('--rough'),
-    accent: color('--accent'),
-    playhead: color('--playhead'),
+    keep: color('--keep'),
+    keepStrong: color('--keep-strong'),
+    onKeep: color('--on-keep'),
+    cut: color('--cut'),
+    cutHatch: color('--cut-hatch'),
+    unchecked: color('--unchecked'),
   };
   return { g, width, height, colors };
 }

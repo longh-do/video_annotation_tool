@@ -4,12 +4,12 @@ import { type FrameMap, parseFramesCsv } from '../../src/core/frame-map.ts';
 import {
   deleteBoundary,
   emptyTimeline,
-  flipSegmentAt,
   markChecked,
   moveBoundary,
   ORIGINS,
   type Origin,
   type State,
+  setRange,
   setStateFrom,
   type Timeline,
 } from '../../src/core/timeline.ts';
@@ -91,7 +91,7 @@ export const frameMapArb = (maxFrames = 60) =>
 export type Edit =
   | { readonly kind: 'set'; readonly at: number; readonly state: State; readonly origin: Origin }
   | { readonly kind: 'move'; readonly which: number; readonly to: number; readonly origin: Origin }
-  | { readonly kind: 'flip'; readonly at: number }
+  | { readonly kind: 'range'; readonly at: number; readonly length: number; readonly state: State }
   | { readonly kind: 'delete'; readonly which: number }
   | { readonly kind: 'check'; readonly which: number };
 
@@ -117,7 +117,15 @@ export const editArb: fc.Arbitrary<Edit> = fc.oneof(
       origin,
     }),
   },
-  { weight: 1, arbitrary: fc.record({ kind: fc.constant('flip' as const), at: position }) },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      kind: fc.constant('range' as const),
+      at: position,
+      length: position,
+      state: fc.constantFrom('keep' as const, 'cut' as const),
+    }),
+  },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant('delete' as const), which: position }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant('check' as const), which: position }) },
 );
@@ -131,8 +139,10 @@ export function applyEdit(t: Timeline, edit: Edit): Timeline {
       return setStateFrom(t, frame(edit.at), edit.state, edit.origin);
     case 'move':
       return none ? t : moveBoundary(t, index(edit.which), frame(edit.to), edit.origin);
-    case 'flip':
-      return flipSegmentAt(t, frame(edit.at));
+    case 'range': {
+      const from = frame(edit.at);
+      return setRange(t, from, from + 1 + (edit.length % (t.frameCount - from)), edit.state);
+    }
     case 'delete':
       return none ? t : deleteBoundary(t, index(edit.which));
     case 'check':

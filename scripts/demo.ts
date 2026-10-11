@@ -34,14 +34,14 @@ try {
   await page.locator('.time[data-frame="0"]').waitFor({ timeout: 60_000 });
 
   await caption(page, 'A queue of recordings; each opens where it was left');
-  await page.getByRole('button', { name: 'Queue' }).click();
+  await page.getByRole('button', { name: /Queue/ }).click();
   await pause(2500);
   await page.keyboard.press('Escape');
 
   await caption(page, 'Watch at 2× and press S where the task starts, D where it ends');
   await page.keyboard.press('Space');
   await pressAt(page, 75, 's'); // a little after the first touch, as a person would
-  await caption(page, 'Hold F to skim at 4× through what is obviously not the task');
+  await caption(page, 'Hold F to skim at 6× through what is obviously not the task');
   await page.keyboard.down('f');
   await waitForFrame(page, 2250);
   await page.keyboard.up('f');
@@ -52,7 +52,7 @@ try {
   await pressAt(page, 2415, 'd');
   await page.keyboard.press('Space');
 
-  await caption(page, 'Check the rough marks: Enter lands on each one, frames before it below');
+  await caption(page, 'Marks made while playing need a check: Enter lands on each one');
   await pause(1200);
   await page.keyboard.press('Enter');
   await pause(1800);
@@ -61,15 +61,22 @@ try {
   await pause(1500);
   await page.keyboard.press('Enter');
   await pause(1500);
-  await caption(page, ', and . move a boundary a frame at a time; / replays it at half speed');
+  await caption(page, ', and . move a boundary a frame at a time');
   for (let i = 0; i < 6; i++) {
     await page.keyboard.press('Comma');
     await pause(250);
   }
-  await page.keyboard.press('Slash');
-  await pause(4500);
   await page.keyboard.press('Enter');
   await pause(1200);
+
+  await caption(page, 'Click an interval to select it; right-click it to merge or delete');
+  const bar = (await page.locator('.timeline').boundingBox())!;
+  const kept = (await page.locator('.tl-badge').first().boundingBox())!;
+  await page.mouse.click(kept.x + 30, bar.y + 54);
+  await pause(1200);
+  await page.mouse.click(kept.x + 30, bar.y + 54, { button: 'right' });
+  await pause(2500);
+  await page.keyboard.press('Escape');
 
   await caption(page, '⌘↵ submits; the next recording, fetched ahead, opens at once');
   await page.keyboard.press('ControlOrMeta+Enter');
@@ -88,19 +95,24 @@ try {
   await page.keyboard.press('Enter');
   await pause(2000);
 
-  await caption(page, 'The 42-minute session: thumbnails on hover, one interval per plug-in');
-  await page.getByRole('button', { name: 'Queue' }).click();
+  await caption(page, 'The 42-minute session: thumbnails on hover, pinch or ⌘+ to zoom');
+  await page.getByRole('button', { name: /Queue/ }).click();
   await page.getByRole('button', { name: new RegExp(long) }).click();
   await page.locator('.recording-id', { hasText: long }).waitFor();
-  const overview = (await page.locator('.overview').boundingBox())!;
+  const timeline = (await page.locator('.timeline').boundingBox())!;
   for (let x = 0.1; x <= 0.9; x += 0.1) {
-    await page.mouse.move(overview.x + overview.width * x, overview.y + overview.height / 2);
+    await page.mouse.move(timeline.x + timeline.width * x, timeline.y + 54);
     await pause(250);
   }
   await page.mouse.move(0, 0);
   await page.evaluate((hash) => {
     location.hash = hash;
   }, `${long}/780`);
+  await page.locator('.time[data-frame="780"]').waitFor();
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press('ControlOrMeta+Equal');
+    await pause(150);
+  }
   await page.keyboard.press('Space');
   await pressAt(page, 900, 's');
   await pressAt(page, 1100, 'd');

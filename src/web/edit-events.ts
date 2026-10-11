@@ -3,7 +3,7 @@
  * every key and click. Event names follow the plan's event list (G2).
  */
 import type { Timeline } from '../core/timeline.ts';
-import type { EditorAction, EditorState } from './editor.ts';
+import { type EditorAction, type EditorState, selectedInterval } from './editor.ts';
 
 export interface EditEvent {
   readonly event: string;
@@ -32,14 +32,25 @@ export function editEvent(
       return action.origin === 'drag' ? null : adjusted('filmstrip', was, now);
     case 'nudge':
       return adjusted('nudge', was, now);
-    case 'move-nearest':
-      return adjusted('move_here', was, now);
     case 'drag-end':
       return before.history.gestureBase && adjusted('drag', before.history.gestureBase, now);
-    case 'flip':
-      return { event: 'segment_flipped', fields: { frame: action.frame } };
-    case 'delete-selected':
-      return { event: 'boundary_deleted', fields: { frame: before.selected } };
+    case 'set-range':
+      return {
+        event: 'range_set',
+        fields: { from: action.from, to: action.to, state: action.state },
+      };
+    case 'delete-boundary':
+      return { event: 'boundary_deleted', fields: { frame: was.boundaries[action.index]?.frame } };
+    case 'delete-selected': {
+      if (before.selected !== null) {
+        return { event: 'boundary_deleted', fields: { frame: before.selected } };
+      }
+      const interval = selectedInterval(before);
+      return {
+        event: 'range_set',
+        fields: { from: interval?.start, to: interval?.end, state: 'cut' },
+      };
+    }
     case 'undo':
     case 'redo':
       return { event: action.type, fields: {} };

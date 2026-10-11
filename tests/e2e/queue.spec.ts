@@ -36,7 +36,7 @@ test('⌘↵ saves the annotation as complete and the next recording opens withi
 }) => {
   await open(page, first.id, 0);
   await markInterval(page, 10, 30);
-  await expect(page.locator('.queue-bar')).toContainText('next ready');
+  await expect(page.locator('.queue-bar')).toHaveAttribute('data-next', 'ready');
   const elapsed = page.evaluate(
     (next) =>
       new Promise<number>((resolve) => {
@@ -69,7 +69,9 @@ test('⌘↵ saves the annotation as complete and the next recording opens withi
   expect(result?.annotation.keep_intervals).toHaveLength(1);
 });
 
-test('⌘↵ with rough marks left goes to the first one instead of submitting', async ({ page }) => {
+test('⌘↵ with marks still to check warns: Enter goes to the first, ⌘↵ submits anyway', async ({
+  page,
+}) => {
   await open(page, first.id, 20);
   await page.keyboard.press('Space');
   await page.waitForTimeout(500);
@@ -80,12 +82,27 @@ test('⌘↵ with rough marks left goes to the first one instead of submitting',
   await expect
     .poll(async () => (await saved(page.request, first.id))?.sidecar?.boundaries.length)
     .toBe(2);
-  const rough = (await saved(page.request, first.id))!.sidecar!.boundaries[0]!.frame;
+  const unchecked = (await saved(page.request, first.id))!.sidecar!.boundaries[0]!.frame;
   await page.keyboard.press('ControlOrMeta+Enter');
-  await expect(page.locator(`.time[data-frame="${rough}"]`)).toBeVisible();
-  await expect(page.locator('.toast')).toContainText('2 rough marks to check');
+  const question = page.getByRole('alertdialog');
+  await expect(question).toContainText('2 marks still need checking');
+  await page.waitForTimeout(600);
+  await page.keyboard.press('Enter');
+  await expect(question).toBeHidden();
+  await expect(page.locator(`.time[data-frame="${unchecked}"]`)).toBeVisible();
   await expect(page.locator('.recording-id')).toHaveText(first.id);
   expect((await saved(page.request, first.id))?.annotation.status).toBe('not_reviewed');
+
+  // A second ⌘↵ right after the first can't answer the question unread; a later one can.
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(question).toBeVisible();
+  await page.waitForTimeout(600);
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(page.locator('.recording-id')).toHaveText(second.id);
+  const result = await saved(page.request, first.id);
+  expect(result?.annotation.status).toBe('complete');
+  expect(result?.sidecar?.boundaries.filter((b) => !b.checked)).toHaveLength(2);
 });
 
 test('a keep running to the end of the video asks before submitting', async ({ page }) => {
@@ -93,12 +110,12 @@ test('a keep running to the end of the video asks before submitting', async ({ p
   await page.keyboard.press('s');
   await page.keyboard.press('ControlOrMeta+Enter');
   const question = page.getByRole('alertdialog');
-  await expect(question).toContainText('end of the video');
+  await expect(question).toContainText('The last interval has no stop');
   await page.keyboard.press('Escape');
   await expect(question).toBeHidden();
   await expect(page.locator('.recording-id')).toHaveText(first.id);
   await page.keyboard.press('ControlOrMeta+Enter');
-  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: /Submit anyway/ }).click();
   await expect(page.locator('.recording-id')).toHaveText(second.id);
   const result = await saved(page.request, first.id);
   expect(result?.annotation.status).toBe('complete');
@@ -146,7 +163,7 @@ test('Q: a reason and a note, then the queue moves on', async ({ page }) => {
 
 test('the queue shows every recording and opens the one picked', async ({ page }) => {
   await open(page, first.id, 0);
-  await page.getByRole('button', { name: 'Queue' }).click();
+  await page.getByRole('button', { name: /Queue/ }).click();
   const queue = page.getByRole('dialog', { name: 'Queue' });
   await expect(queue.locator('.queue-item')).toHaveCount(SYNTHETIC_RECORDINGS.length);
   await queue.getByRole('button', { name: new RegExp(second.id) }).click();
@@ -208,7 +225,7 @@ test('keys pressed while an outcome is handed over do nothing', async ({ page })
   await open(page, first.id, 0);
   await markInterval(page, 10, 20);
   await page.keyboard.press('ControlOrMeta+Enter');
-  await page.keyboard.press('x');
+  await page.keyboard.press('Backspace'); // would delete the selected stop
   await expect(page.locator('.recording-id')).toHaveText(second.id);
   await page.waitForTimeout(500);
   expect((await saved(page.request, first.id))?.annotation).toMatchObject({
@@ -239,7 +256,7 @@ test('a question waits while the queue is open, without taking its keys', async 
   await open(page, first.id, 0);
   await markInterval(page, 10, 20);
   await page.keyboard.press('n');
-  await page.getByRole('button', { name: 'Queue' }).click();
+  await page.getByRole('button', { name: /Queue/ }).click();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('alertdialog')).toContainText('No useful task');
@@ -253,12 +270,37 @@ test('a question waits while the queue is open, without taking its keys', async 
   });
 });
 
+test('a question waits while the command menu is open: Enter there runs the command, not the answer', async ({
+  page,
+}) => {
+  await open(page, first.id, 0);
+  await markInterval(page, 10, 20);
+  await page.keyboard.press('n');
+  const question = page.getByRole('alertdialog');
+  await expect(question).toContainText('No useful task');
+  await page.getByRole('button', { name: 'Command menu' }).click();
+  await expect(question).toBeHidden();
+  await page.keyboard.type('forward 1 frame');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Command menu' })).toBeHidden();
+  await expect(page.locator('.time[data-frame="21"]')).toBeVisible();
+  // The question is back, still unanswered.
+  await expect(question).toContainText('No useful task');
+  await page.keyboard.press('Escape');
+  await expect(question).toBeHidden();
+  await expect(page.locator('.save-chip')).toHaveAttribute('data-save', 'saved');
+  expect((await saved(page.request, first.id))?.annotation).toMatchObject({
+    status: 'not_reviewed',
+    keep_intervals: [expect.anything()],
+  });
+});
+
 test('a recording that fails to open is reported, and the one on screen stays', async ({
   page,
 }) => {
   await open(page, first.id, 0);
   await page.route(`**/api/annotations/${second.id}`, (route) => route.abort());
-  await page.getByRole('button', { name: 'Queue' }).click();
+  await page.getByRole('button', { name: /Queue/ }).click();
   await page.getByRole('button', { name: new RegExp(second.id) }).click();
   await expect(page.locator('.toast')).toContainText(`Couldn't open ${second.id}`);
   await page.keyboard.press('Escape');

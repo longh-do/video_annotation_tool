@@ -10,8 +10,10 @@
  * installed) lists exactly the video's packet timestamps. Warnings don't reject: e.g. an
  * annotation template naming another recording, which happens in the provided data — the
  * manifest is the source of truth. One broken folder never stops the others.
+ *
+ * Given a folder of task guides (task-guides.ts), each recording also gets its task: the first
+ * guide that covers it, with a warning when several or none do.
  */
-import { createHash } from 'node:crypto';
 import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { displayedFrame, type FrameMap, frameCount, parseFramesCsv } from '../core/frame-map.ts';
@@ -19,11 +21,12 @@ import { isNsString } from '../core/ns.ts';
 import {
   type Camera,
   type Catalog,
-  type Guideline,
   isSafeRecordingId,
   type Recording,
+  type TaskGuide,
 } from './catalog.ts';
 import { type MediaTools, SPRITE_GRID } from './ffmpeg.ts';
+import { readTaskGuides, tasksCovering } from './task-guides.ts';
 
 export interface Inspection {
   readonly manifestPath: string;
@@ -36,7 +39,8 @@ export interface Inspection {
 export interface IngestOptions {
   readonly dataDir: string;
   readonly outDir: string;
-  readonly guidelinePath: string | null;
+  /** The folder of task guides, or null for none. */
+  readonly tasksDir: string | null;
   /** ffprobe/ffmpeg, or null to skip the video checks and thumbnails. */
   readonly tools: MediaTools | null;
 }
@@ -59,10 +63,12 @@ interface Manifest {
   readonly cameras: Readonly<Record<string, readonly ManifestPart[]>>;
 }
 
+/** `taskWarnings` are about the task guides themselves; recordings carry their own warnings. */
 export async function ingest(
   options: IngestOptions,
-): Promise<{ catalog: Catalog; inspections: Inspection[] }> {
+): Promise<{ catalog: Catalog; inspections: Inspection[]; taskWarnings: string[] }> {
   const outDir = resolve(options.outDir);
+  const guides = options.tasksDir === null ? null : await readTaskGuides(options.tasksDir);
   const inspections: Inspection[] = [];
   const seen = new Set<string>();
   for (const manifestPath of await findManifests(options.dataDir)) {
@@ -83,22 +89,22 @@ export async function ingest(
   const recordings: Recording[] = [];
   for (const [i, inspection] of inspections.entries()) {
     if (!inspection.recording) continue;
-    const recording = options.tools
-      ? await withThumbnails(inspection.recording, outDir, options.tools)
-      : inspection.recording;
+    let recording = inspection.recording;
+    if (guides) recording = withTask(recording, guides.tasks);
+    if (options.tools) recording = await withThumbnails(recording, outDir, options.tools);
     inspections[i] = { ...inspection, recording, warnings: recording.warnings };
     recordings.push(recording);
   }
 
   const catalog: Catalog = {
-    version: 1,
+    version: 2,
     createdAt: new Date().toISOString(),
-    guideline: options.guidelinePath ? await readGuideline(options.guidelinePath) : null,
+    tasks: Object.fromEntries(guides?.tasks ?? []),
     recordings,
   };
   await mkdir(outDir, { recursive: true });
   await writeFile(join(outDir, 'catalog.json'), `${JSON.stringify(catalog, null, 2)}\n`);
-  return { catalog, inspections };
+  return { catalog, inspections, taskWarnings: guides?.warnings ?? [] };
 }
 
 /** Every manifest.json under `dir`, in path order (the downloads are numbered 01, 02, …). */
@@ -140,7 +146,14 @@ export async function inspectRecording(
     }
     if (errors.length === 0) {
       const durationS = manifest.recording_duration_s;
-      const recording: Recording = { id, durationS, cameras, thumbnails: null, warnings };
+      const recording: Recording = {
+        id,
+        durationS,
+        task: null,
+        cameras,
+        thumbnails: null,
+        warnings,
+      };
       return { manifestPath, recording, errors, warnings };
     }
   } catch (error) {
@@ -217,6 +230,18 @@ async function videoProblem(
   const k = probe.pts.findIndex((pts, i) => pts !== frames.ptsUs[i]);
   if (k < 0) return null;
   return `frame ${k} is at ${probe.pts[k]} µs in the video, ${frames.ptsUs[k]} µs in its frames CSV`;
+}
+
+/** The recording's task: the first guide, by file name, that covers it. */
+function withTask(recording: Recording, tasks: ReadonlyMap<string, TaskGuide>): Recording {
+  const covering = tasksCovering(recording.id, tasks);
+  const task = covering[0] ?? null;
+  const warnings = [...recording.warnings];
+  if (task === null) warnings.push('no task guide covers this recording');
+  if (covering.length > 1) {
+    warnings.push(`covered by several task guides (${covering.join(', ')}); using ${task}`);
+  }
+  return { ...recording, task, warnings };
 }
 
 /**
@@ -302,13 +327,6 @@ async function templateWarning(dir: string, id: string): Promise<string | null> 
   } catch {
     return 'annotation-template.json is not valid JSON; ignored it';
   }
-}
-
-async function readGuideline(path: string): Promise<Guideline> {
-  const text = await readFile(path, 'utf8');
-  const title = /^#\s+(.+)$/m.exec(text)?.[1]?.trim() ?? basename(path);
-  const version = `sha256:${createHash('sha256').update(text).digest('hex').slice(0, 12)}`;
-  return { path: resolve(path), title, version };
 }
 
 async function firstExisting(paths: readonly string[]): Promise<string | null> {

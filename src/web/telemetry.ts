@@ -9,12 +9,13 @@
 export interface TelemetryContext {
   readonly annotatorId: string;
   readonly toolVersion: string;
-  readonly guidelineVersion: string | null;
 }
 
 /** Which recording an event is about, and where its video was. */
 export interface EventPlace {
   readonly recordingId: string;
+  /** The version of the recording's task guide, if it has one. */
+  readonly guidelineVersion: string | null;
   /** The source timestamp of the frame on screen, as a decimal string. */
   readonly mediaPosNs: string | null;
   readonly playbackRate: number;
@@ -55,7 +56,7 @@ export class Telemetry {
       annotator_id: this.#context.annotatorId,
       recording_id: place.recordingId,
       tool_version: this.#context.toolVersion,
-      guideline_version: this.#context.guidelineVersion,
+      guideline_version: place.guidelineVersion,
       media_pos_ns: place.mediaPosNs,
       playback_rate: place.playbackRate,
       page_visible: document.visibilityState === 'visible',

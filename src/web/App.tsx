@@ -74,12 +74,8 @@ export function App() {
     const start = async () => {
       const [loaded, journal] = await Promise.all([fetchQueue(), Journal.open()]);
       if (cancelled) return;
-      const { annotatorId, toolVersion, guideline } = loaded.session;
-      telemetry = new Telemetry({
-        annotatorId,
-        toolVersion,
-        guidelineVersion: guideline?.version ?? null,
-      });
+      const { annotatorId, toolVersion } = loaded.session;
+      telemetry = new Telemetry({ annotatorId, toolVersion });
       sessions.current = new Sessions(journal, telemetry);
       setQueue(loaded);
       const wanted = placeFromHash().recordingId;
@@ -207,7 +203,6 @@ export function App() {
         key={current}
         recording={opened.recording}
         annotation={opened.annotation}
-        session={queue.session}
         canMark={canMark}
         blocked={showQueue || handingOver}
         queueBar={

@@ -1,48 +1,62 @@
-import { useEffect } from 'react';
+import { type ReactNode, useEffect, useId, useRef } from 'react';
 
-interface ConfirmBarProps {
-  readonly message: string;
-  /** What the confirming key is called, e.g. "↵" or "⌘↵". */
-  readonly confirmLabel: string;
-  readonly onConfirm: () => void;
-  readonly onCancel: () => void;
-  /** Whether a key press confirms. Defaults to Enter. */
-  readonly confirms?: (event: KeyboardEvent) => boolean;
+export interface BarAction {
+  readonly label: string;
+  /** What the key is called on screen, e.g. "↵" or "⌘↵". */
+  readonly keyLabel: string;
+  readonly matches: (event: KeyboardEvent) => boolean;
+  readonly run: () => void;
 }
 
-/** A one-line question over the video: confirm with a key, or Escape to go back. */
-export function ConfirmBar({
-  message,
-  confirmLabel,
-  onConfirm,
-  onCancel,
-  confirms,
-}: ConfirmBarProps) {
+interface ConfirmBarProps {
+  readonly message: ReactNode;
+  /** The first one is the main answer. */
+  readonly actions: readonly BarAction[];
+  readonly onCancel: () => void;
+  /**
+   * Keys are ignored this long after the bar appears, so a quick second press of the key that
+   * asked (⌘↵ twice) can't answer it unread.
+   */
+  readonly armMs?: number;
+}
+
+/** A question over the bottom of the video: answer with a key or a click, or Escape to go back. */
+export function ConfirmBar({ message, actions, onCancel, armMs = 0 }: ConfirmBarProps) {
+  const shownAt = useRef(performance.now());
+  const messageId = useId();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // A held key is not an answer: holding ⌘↵ must not confirm what it just asked.
+      // A held key is not an answer either.
       if (event.repeat) return;
-      const isConfirm = confirms
-        ? confirms(event)
-        : event.key === 'Enter' && !event.metaKey && !event.ctrlKey;
-      if (!isConfirm && event.key !== 'Escape') return;
+      const action = actions.find((a) => a.matches(event));
+      if (!action && event.key !== 'Escape') return;
       event.preventDefault();
       event.stopPropagation();
-      if (isConfirm) onConfirm();
-      else onCancel();
+      if (!action) onCancel();
+      else if (performance.now() - shownAt.current >= armMs) action.run();
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [confirms, onConfirm, onCancel]);
+  }, [actions, onCancel, armMs]);
 
   return (
-    <div className="confirm" role="alertdialog" aria-label={message}>
-      <span>{message}</span>
-      <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onConfirm}>
-        Confirm ({confirmLabel})
-      </button>
+    <div className="confirm" role="alertdialog" aria-labelledby={messageId}>
+      <div id={messageId} className="confirm-message">
+        {message}
+      </div>
+      {actions.map((action, i) => (
+        <button
+          key={action.label}
+          type="button"
+          className={i === 0 ? 'primary' : undefined}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={action.run}
+        >
+          {action.label} <kbd>{action.keyLabel}</kbd>
+        </button>
+      ))}
       <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onCancel}>
-        Back (Esc)
+        Back <kbd>Esc</kbd>
       </button>
     </div>
   );

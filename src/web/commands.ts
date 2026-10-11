@@ -1,5 +1,5 @@
 /**
- * What each key does, and what the mouse does on the timelines and the filmstrip, under the same
+ * What each key does, and what the mouse does on the timeline and the filmstrip, under the same
  * rules. Handlers read the player and the editor at the moment of the key press, never a value
  * captured at the last render: a held key fires faster than React renders.
  */
@@ -8,7 +8,7 @@ import type { State } from '../core/timeline.ts';
 import { tick } from './audio.ts';
 import { type EditorAction, type EditorState, selectedIndex } from './editor.ts';
 import type { Command, KeyHandler } from './keymap.ts';
-import { DEFAULT_SPEED, type Player, SPEEDS } from './player/player.ts';
+import type { Player } from './player/player.ts';
 import type { Store } from './store.ts';
 
 export interface CommandContext {
@@ -17,7 +17,8 @@ export interface CommandContext {
   /** False while editing is unsafe or impossible. */
   readonly canEdit: () => boolean;
   readonly sound: () => boolean;
-  readonly setSpeed: (speed: number) => void;
+  /** Zooms the timeline: in or out around the playhead, or out to the whole recording. */
+  readonly zoom: (how: 'in' | 'out' | 'fit') => void;
   readonly toggleHelp: () => void;
   readonly submit: () => void;
   readonly noTask: () => void;
@@ -72,20 +73,20 @@ export function createCommands(ctx: CommandContext): Record<Command, KeyHandler>
       if (after.selected !== before) showSelected(ctx, after);
     });
 
-  const speed = (index: number) => () => ctx.setSpeed(SPEEDS[index] ?? DEFAULT_SPEED);
-
   return {
     playPause: () => player.togglePlay(),
     keep: mark('keep'),
     cut: mark('cut'),
     accept: editing(() => {
       // The check pass happens paused. A mark is confirmed only while it is on screen, i.e. once
-      // the annotator has looked at it; otherwise Enter goes to the next rough mark. Enter while
-      // playing around the mark ends the replay on it and confirms it.
+      // the annotator has looked at it; otherwise Enter goes to the next mark to check (during
+      // playback too: it stops there, unconfirmed).
+      if (live()) {
+        goTo(ctx, timeline().boundaries[nextToCheck(timeline(), player.frame)]?.frame);
+        return;
+      }
       const index = selectedIndex(editor.getState());
       const selected = timeline().boundaries[index]?.frame;
-      if (player.snapshot.around && selected !== undefined) player.seek(selected);
-      else if (live()) return;
       const here = player.frame;
       const onIt = selected === here;
       if (onIt) editor.dispatch({ type: 'confirm', index });
@@ -99,11 +100,6 @@ export function createCommands(ctx: CommandContext): Record<Command, KeyHandler>
     forward1: () => void player.step(1),
     back10: () => void player.step(-10),
     forward10: () => void player.step(10),
-    rewind: () => player.rewind(2),
-    speed1: speed(0),
-    speed2: speed(1),
-    speed3: speed(2),
-    speed4: speed(3),
     skim: { press: () => player.skim(true), release: () => player.skim(false) },
     previousBoundary: () => {
       const here = player.frame;
@@ -117,28 +113,28 @@ export function createCommands(ctx: CommandContext): Record<Command, KeyHandler>
     nudgeForward1: nudge(1),
     nudgeBack10: nudge(-10),
     nudgeForward10: nudge(10),
-    moveHere: editing(() => {
-      editor.dispatch({
-        type: 'move-nearest',
-        frame: player.frame,
-        origin: live() ? 'live' : 'placed',
-      });
-    }),
-    flip: editing(() => editor.dispatch({ type: 'flip', frame: player.frame })),
-    deleteBoundary: editing(() => editor.dispatch({ type: 'delete-selected' })),
-    playAround: () => player.playAround(editor.getState().selected ?? Math.max(player.frame, 0)),
+    deleteSelected: editing(() => editor.dispatch({ type: 'delete-selected' })),
+    zoomIn: () => ctx.zoom('in'),
+    zoomOut: () => ctx.zoom('out'),
+    zoomFit: () => ctx.zoom('fit'),
     noTask: editing(() => ctx.noTask()),
     needsReview: editing(() => ctx.needsReview()),
     help: () => ctx.toggleHelp(),
   };
 }
 
-/** What the mouse does: the interval list, the filmstrip, and dragging boundary handles. */
+/** What the mouse does: the timeline, its menu, the interval list and the filmstrip. */
 export interface PointerActions {
   /** Select a boundary and show it. */
   readonly goTo: (frame: number) => void;
+  /** Select a kept interval (or, with null, nothing) and show `frame`, if given. */
+  readonly selectInterval: (start: number | null, frame: number | null) => void;
   /** A filmstrip thumbnail: the selected boundary moves to that frame. */
   readonly pick: (frame: number) => void;
+  /** A boundary's badge on the timeline. */
+  readonly deleteBoundary: (index: number) => void;
+  /** The timeline's menu: every frame in [from, to) becomes `state`. */
+  readonly setRange: (from: number, to: number, state: State) => void;
   readonly dragStart: (index: number) => void;
   /** The video follows the handle, so the frame under the pointer is on screen. */
   readonly drag: (index: number, frame: number) => void;
@@ -153,10 +149,20 @@ export function createPointerActions(ctx: CommandContext): PointerActions {
   const dragging = () => editor.getState().history.gestureBase !== null;
   return {
     goTo: (frame) => goTo(ctx, frame),
+    selectInterval: (start, frame) => {
+      editor.dispatch({ type: 'select-interval', start });
+      if (frame !== null) ctx.player.seek(frame);
+    },
     pick: (frame) => {
       const index = selectedIndex(editor.getState());
       if (!ctx.canEdit() || index < 0) return;
       showSelected(ctx, editor.dispatch({ type: 'move', index, frame, origin: 'placed' }));
+    },
+    deleteBoundary: (index) => {
+      if (ctx.canEdit()) editor.dispatch({ type: 'delete-boundary', index });
+    },
+    setRange: (from, to, state) => {
+      if (ctx.canEdit()) editor.dispatch({ type: 'set-range', from, to, state });
     },
     dragStart: (index) => {
       if (ctx.canEdit()) showSelected(ctx, editor.dispatch({ type: 'drag-start', index }));

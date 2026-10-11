@@ -31,7 +31,7 @@ The seconds per checked boundary decide where between those numbers the long, bo
 
 | Tier | Share | Purpose |
 |---|---|---|
-| Automatic checks | 100% | contract invariants, rough marks left, keep running to the end |
+| Automatic checks | 100% | contract invariants, marks left unchecked, keep running to the end |
 | Hidden gold | ~5% (20–30% in a new annotator's first shifts) | accuracy per annotator, never announced per task |
 | Blind double annotation | ~10% | agreement, and gold candidates |
 | Review | first 20–30 tasks of each annotator, then 10–15% chosen by risk | feedback, rework |
@@ -41,7 +41,7 @@ Steady-state QA costs about 20% of capacity. Pass/fail thresholds are per-task Q
 
 ## People
 
-- **Onboarding (~1.5–2 h):** keys from the first minute with the legend on screen; about eight ten-minute drills on gold clips with feedback, to a 90% criterion; a joint discussion of the first 6–12 recordings against the task's guideline; then covert gold, full review of the first 20–30 tasks and a weekly calibration with a guideline changelog. Accuracy on the first five tasks predicts long-run accuracy well, so that is where coaching pays.
+- **Onboarding (~1.5–2 h):** keys from the first minute, with the Guide tab and the command menu (⌘K) to look them up; about eight ten-minute drills on gold clips with feedback, to a 90% criterion; a joint discussion of the first 6–12 recordings against the task's guideline; then covert gold, full review of the first 20–30 tasks and a weekly calibration with a guideline changelog. Accuracy on the first five tasks predicts long-run accuracy well, so that is where coaching pays.
 - **Shifts:** 30–45-minute marking blocks, a break of at least 10 minutes every ~90 minutes, a warm-up gold clip per block, shifts of at most 8 hours; the 42-minute session runs as two blocks split at a head-turn gap. Drift is tracked by time in block (signed bias, keep fraction, missed short intervals), never by speed alone.
 - **Teams:** pods of about 12 annotators with a reviewer-lead; hourly pay with a quality-gated bonus.
 

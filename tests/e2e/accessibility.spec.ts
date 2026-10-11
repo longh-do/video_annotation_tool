@@ -30,14 +30,16 @@ test('every control, video and tab has a name; the tab title names the recording
   );
 });
 
-test('the key list and the queue are labelled dialogs that take the focus', async ({ page }) => {
+test('the command menu and the queue are labelled dialogs that take the focus', async ({
+  page,
+}) => {
   for (const [open, name] of [
-    [() => page.keyboard.press('h'), 'All keys'],
-    [() => page.getByRole('button', { name: 'Queue' }).click(), 'Queue'],
+    [() => page.keyboard.press('ControlOrMeta+k'), 'Command menu'],
+    [() => page.getByRole('button', { name: /Queue/ }).click(), 'Queue'],
   ] as const) {
     await open();
     const dialog = page.getByRole('dialog', { name });
-    await expect(dialog).toBeFocused();
+    await expect.poll(() => dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
     // Tab stays inside: the rest of the screen is inert while a dialog is open.
     await page.keyboard.press('Tab');
     expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
@@ -51,8 +53,8 @@ test('a question about an outcome is an alert dialog with its keys on its button
 }) => {
   await page.keyboard.press('n');
   const question = page.getByRole('alertdialog', { name: /No useful task/ });
-  await expect(question.getByRole('button', { name: 'Confirm (↵)' })).toBeVisible();
-  await expect(question.getByRole('button', { name: 'Back (Esc)' })).toBeVisible();
+  await expect(question.getByRole('button', { name: 'Cut all and submit ↵' })).toBeVisible();
+  await expect(question.getByRole('button', { name: 'Back Esc' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(question).toBeHidden();
 });

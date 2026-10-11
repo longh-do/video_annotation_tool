@@ -17,7 +17,7 @@ async function setUp() {
   const { catalog } = await ingest({
     dataDir: join(root, 'data'),
     outDir: join(root, 'derived'),
-    guidelinePath: null,
+    tasksDir: null,
     tools: null,
   });
   const recording = catalog.recordings.find((r) => r.id === 'rec-a')!;

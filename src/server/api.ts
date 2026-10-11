@@ -2,8 +2,8 @@
  * The HTTP API and media routes.
  *
  *   GET  /api/queue                 recordings in queue order with their save status
- *   GET  /api/recordings/:id        cameras, media URLs, thumbnails
- *   GET  /api/guideline             the batch's annotation guideline (markdown)
+ *   GET  /api/recordings/:id        cameras, media URLs, thumbnails, task
+ *   GET  /api/tasks/:id             a task's guide (markdown, without its header)
  *   GET  /api/annotations/:id       the saved annotation and sidecar; ETag = revision
  *   PUT  /api/annotations/:id       save; If-Match must name the revision that was edited
  *   POST /api/events                append a batch of telemetry events
@@ -24,12 +24,13 @@ import {
   validateAnnotationFile,
   validateSidecarDraft,
 } from '../core/annotation.ts';
-import type { QueueResponse, RecordingResponse, SaveResult } from '../core/api-types.ts';
+import type { QueueResponse, RecordingResponse, SaveResult, TaskInfo } from '../core/api-types.ts';
 import { type FrameMap, parseFramesCsv } from '../core/frame-map.ts';
 import { type AnnotationStore, RevisionConflict, type Stamp } from './annotations.ts';
 import { type Catalog, type Recording, referenceCamera } from './catalog.ts';
 import { HttpError, readJson, sendJson } from './http.ts';
 import { sendFile } from './media.ts';
+import { guideMarkdown, guideTitle, guideVersion } from './task-guides.ts';
 import type { TelemetryLog } from './telemetry.ts';
 
 export interface ApiOptions {
@@ -50,21 +51,32 @@ const MAX_EVENTS = 1000;
 export function createApi(options: ApiOptions): Handler {
   const { catalog, store, telemetry } = options;
   const recordings = new Map(catalog.recordings.map((r) => [r.id, r]));
+  const tasks = new Map(Object.entries(catalog.tasks));
   const frameMaps = new Map<string, Promise<FrameMap>>();
-  const guideline = catalog.guideline && {
-    title: catalog.guideline.title,
-    version: catalog.guideline.version,
-  };
-  const stamp: Stamp = {
-    annotatorId: options.annotatorId,
-    guidelineVersion: guideline?.version ?? null,
-    toolVersion: options.toolVersion,
-  };
 
   const recordingOf = (id = ''): Recording => {
     const recording = recordings.get(id);
     if (!recording) throw new HttpError(404, `no recording ${id}`);
     return recording;
+  };
+
+  /**
+   * A recording's task guide as it is on disk now, so an edited guide shows on the next reload
+   * without a new ingest, and saves are stamped with the version of the text annotators see.
+   * Which recordings a guide covers was settled at ingest. Null without a guide, or if its file
+   * is gone.
+   */
+  const guideNow = async (id: string | null) => {
+    const guide = id === null ? undefined : tasks.get(id);
+    if (!guide || id === null) return null;
+    const text = await readFile(guide.path, 'utf8').catch(() => null);
+    if (text === null) return null;
+    const info: TaskInfo = {
+      id,
+      title: guideTitle(text) ?? guide.title,
+      version: guideVersion(text),
+    };
+    return { info, markdown: guideMarkdown(text) };
   };
 
   /** The reference camera's frame map, parsed once per recording (retried if reading failed). */
@@ -91,11 +103,7 @@ export function createApi(options: ApiOptions): Handler {
         };
       }),
     );
-    const session = {
-      annotatorId: options.annotatorId,
-      toolVersion: options.toolVersion,
-      guideline,
-    };
+    const session = { annotatorId: options.annotatorId, toolVersion: options.toolVersion };
     sendJson(res, 200, { session, recordings: items } satisfies QueueResponse);
   };
 
@@ -105,6 +113,7 @@ export function createApi(options: ApiOptions): Handler {
     sendJson(res, 200, {
       id: r.id,
       durationS: r.durationS,
+      task: (await guideNow(r.task))?.info ?? null,
       cameras: r.cameras.map((c) => ({
         name: c.name,
         label: c.label,
@@ -126,14 +135,14 @@ export function createApi(options: ApiOptions): Handler {
     } satisfies RecordingResponse);
   };
 
-  const guidelineText: Route = async (_req, res) => {
-    if (!catalog.guideline) throw new HttpError(404, 'this batch has no guideline');
-    const text = await readFile(catalog.guideline.path, 'utf8');
+  const taskGuide: Route = async (_req, res, [id = '']) => {
+    const guide = tasks.has(id) ? await guideNow(id) : null;
+    if (!guide) throw new HttpError(404, `no task ${id}`);
     res.writeHead(200, {
       'Content-Type': 'text/markdown; charset=utf-8',
       'Cache-Control': 'no-store',
     });
-    res.end(text);
+    res.end(guide.markdown);
   };
 
   const getAnnotation: Route = async (_req, res, [id]) => {
@@ -162,6 +171,12 @@ export function createApi(options: ApiOptions): Handler {
       problems.push(...agreement(annotation as AnnotationFile, sidecar as SidecarDraft, frames));
     }
     if (problems.length > 0) throw new HttpError(400, 'invalid annotation', { problems });
+    // Each recording is annotated against its own task's guide.
+    const stamp: Stamp = {
+      annotatorId: options.annotatorId,
+      guidelineVersion: (await guideNow(r.task))?.info.version ?? null,
+      toolVersion: options.toolVersion,
+    };
     try {
       const saved = await store.save(
         r.id,
@@ -214,7 +229,7 @@ export function createApi(options: ApiOptions): Handler {
   const routes: [method: string, pattern: RegExp, route: Route][] = [
     ['GET', /^\/api\/queue$/, queue],
     ['GET', /^\/api\/recordings\/([^/]+)$/, recording],
-    ['GET', /^\/api\/guideline$/, guidelineText],
+    ['GET', /^\/api\/tasks\/([^/]+)$/, taskGuide],
     ['GET', /^\/api\/annotations\/([^/]+)$/, getAnnotation],
     ['PUT', /^\/api\/annotations\/([^/]+)$/, putAnnotation],
     ['POST', /^\/api\/events$/, postEvents],

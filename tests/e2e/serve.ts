@@ -5,8 +5,7 @@
  *   node tests/e2e/serve.ts
  */
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { findMediaTools } from '../../src/server/ffmpeg.ts';
 import { ingest } from '../../src/server/ingest.ts';
@@ -14,17 +13,32 @@ import { E2E_DIR, writeSyntheticRecordings } from './synthetic.ts';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const DATA = join(E2E_DIR, 'data');
+const TASKS = join(E2E_DIR, 'tasks');
 const DERIVED = join(E2E_DIR, 'derived');
 const ANNOTATIONS = join(E2E_DIR, 'annotations');
 const TELEMETRY = join(E2E_DIR, 'telemetry');
 
 await writeSyntheticRecordings(DATA);
 
-const guideline = join(ROOT, 'docs/guidelines-example.md');
+// One task guide, with a link to a moment; synthetic-e is left without a task on purpose.
+const guide = [
+  '---',
+  'recordings: synthetic-a, synthetic-b, synthetic-c, synthetic-d',
+  '---',
+  '',
+  '# Example task for the tests',
+  '',
+  'This guide only exists for the end-to-end tests.',
+  '',
+  'It links to [a moment in synthetic-c](#synthetic-c/30).',
+];
+await mkdir(TASKS, { recursive: true });
+await writeFile(join(TASKS, 'synthetic.md'), `${guide.join('\n')}\n`);
+
 const { inspections } = await ingest({
   dataDir: DATA,
   outDir: DERIVED,
-  guidelinePath: existsSync(guideline) ? guideline : null,
+  tasksDir: TASKS,
   tools: await findMediaTools(),
 });
 const rejected = inspections.filter((inspection) => inspection.recording === null);

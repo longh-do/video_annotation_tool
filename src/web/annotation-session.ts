@@ -47,8 +47,6 @@ function howChecked(action: EditorAction): string | null {
       return 'nudge';
     case 'move':
       return action.origin === 'drag' ? 'drag' : 'filmstrip';
-    case 'move-nearest':
-      return 'move_here';
     default:
       return null;
   }
@@ -71,6 +69,8 @@ export class AnnotationSession {
   /** The journal held changes that lost to a newer save (e.g. from another tab). */
   readonly discarded: boolean;
   readonly #reference: Reference;
+  /** The version of the recording's task guide, which the annotator works from. */
+  readonly #guidelineVersion: string | null;
   readonly #telemetry: Telemetry | null;
   readonly #stop: (() => void)[] = [];
   #place: Place;
@@ -92,6 +92,7 @@ export class AnnotationSession {
     const { info, unsaved } = recording;
     const frames = recording.frames[0]!;
     this.#reference = { recordingId: info.id, referenceVideo: info.cameras[0]!.video, frames };
+    this.#guidelineVersion = info.task?.version ?? null;
     this.#telemetry = telemetry;
     const { start, recovered, discarded } = startingPoint(recording.saved, unsaved);
     const restored = fromSaved(start, frames);
@@ -149,7 +150,7 @@ export class AnnotationSession {
     this.#clock?.noteInput();
   }
 
-  /** Playback started, stopped or changed speed (`rate` includes skimming and play-around). */
+  /** Playback started, stopped or changed speed (`rate` includes skimming). */
   notePlayback(playing: boolean, rate: number, action: 'play' | 'pause' | 'rate'): void {
     this.#clock?.setPlaying(playing);
     if (playing) this.#maxRate = Math.max(this.#maxRate, rate);
@@ -161,7 +162,13 @@ export class AnnotationSession {
     const { frame, playbackRate } = this.place;
     const { recordingId, frames } = this.#reference;
     const mediaPosNs = frame < 0 ? null : String(frameNs(frames, frame));
-    this.#telemetry?.log({ recordingId, mediaPosNs, playbackRate }, event, fields);
+    const place = {
+      recordingId,
+      guidelineVersion: this.#guidelineVersion,
+      mediaPosNs,
+      playbackRate,
+    };
+    this.#telemetry?.log(place, event, fields);
   }
 
   /** Applies an outcome (submit, no useful task, needs review); true once it is saved. */

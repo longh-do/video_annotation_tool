@@ -24,6 +24,7 @@ interface ReviewDialogProps {
 /**
  * Q: hand the recording to a reviewer. Press 1–4 for the reason, optionally type a note, Enter to
  * send it on; Escape cancels. The saved note always starts with the reason, so it is never empty.
+ * Unlike the menus, a click beside it doesn't close it: that would lose a note being typed.
  */
 export function ReviewDialog({ onSubmit, onCancel }: ReviewDialogProps) {
   const [reason, setReason] = useState<ReviewReason | null>(null);

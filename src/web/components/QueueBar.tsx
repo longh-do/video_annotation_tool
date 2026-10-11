@@ -1,3 +1,5 @@
+import { ListIcon } from './icons.tsx';
+
 interface QueueBarProps {
   /** 1-based place of the open recording in the queue. */
   readonly position: number;
@@ -7,16 +9,26 @@ interface QueueBarProps {
   readonly onOpenQueue: () => void;
 }
 
-const NEXT = { ready: 'next ready', loading: 'loading next…', none: 'no other to do' } as const;
+const NEXT = {
+  ready: 'the next one is ready',
+  loading: 'loading the next one',
+  none: 'no other to do',
+} as const;
 
-/** Where the annotator is in the batch, and whether the next recording is ready to open. */
+/** Where the annotator is in the batch; a click lists every recording. */
 export function QueueBar({ position, total, next, onOpenQueue }: QueueBarProps) {
   return (
-    <span className="queue-bar">
-      Recording {position} of {total} · {NEXT[next]}
-      <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onOpenQueue}>
-        Queue
-      </button>
-    </span>
+    <button
+      type="button"
+      className="queue-bar"
+      data-next={next}
+      aria-label={`Queue: recording ${position} of ${total}`}
+      title={`Recording ${position} of ${total} (${NEXT[next]}). Click for the list.`}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onOpenQueue}
+    >
+      <ListIcon />
+      {position} / {total}
+    </button>
   );
 }

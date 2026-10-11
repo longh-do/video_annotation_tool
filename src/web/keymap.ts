@@ -1,7 +1,7 @@
 /**
- * Keyboard: one table of bindings drives the key handler, the legend that is always on screen and
- * the help overlay, so they can't disagree. The set is small on purpose: a large shortcut set is
- * what made older annotation tools slow to learn.
+ * Keyboard: one table of bindings drives the key handler, the command menu (⌘K) and the key hints
+ * on buttons, so they can't disagree. The set is small on purpose: a large shortcut set is what
+ * made older annotation tools slow to learn.
  *
  * Letters follow the active keyboard layout (S is S on AZERTY too). Digits, punctuation and arrows
  * use the physical key, so Shift+, still means "nudge 10" whatever symbol the layout prints.
@@ -15,9 +15,11 @@ export interface Chord {
   /** ⌘ on macOS, Ctrl elsewhere. */
   readonly mod?: boolean;
   readonly shift?: boolean;
+  /** Works, but isn't listed on screen (e.g. ⇧⌘+ beside ⌘+). */
+  readonly hidden?: boolean;
 }
 
-export type Group = 'Core' | 'Navigate' | 'Correct' | 'Outcome' | 'Help';
+export type Group = 'Annotate' | 'Navigate' | 'Correct' | 'Finish' | 'Help';
 
 export interface Binding {
   readonly command: string;
@@ -32,24 +34,39 @@ export interface Binding {
 }
 
 export const BINDINGS = [
-  { command: 'playPause', label: 'Play / pause', group: 'Core', chords: [{ code: 'Space' }] },
-  { command: 'keep', label: 'Keep from here', group: 'Core', chords: [{ key: 's' }] },
-  { command: 'cut', label: 'Cut from here', group: 'Core', chords: [{ key: 'd' }] },
+  { command: 'playPause', label: 'Play / pause', group: 'Annotate', chords: [{ code: 'Space' }] },
+  {
+    command: 'keep',
+    label: 'Start here (keep from this frame)',
+    group: 'Annotate',
+    chords: [{ key: 's' }],
+  },
+  {
+    command: 'cut',
+    label: 'Stop here (cut from this frame)',
+    group: 'Annotate',
+    chords: [{ key: 'd' }],
+  },
   {
     command: 'accept',
-    label: 'Check: accept, go to next',
-    group: 'Core',
-    chords: [{ code: 'Enter' }, { code: 'NumpadEnter' }],
+    label: 'Check: go to the next mark, or accept this one',
+    group: 'Annotate',
+    chords: [{ code: 'Enter' }, { code: 'NumpadEnter', hidden: true }],
   },
-  { command: 'undo', label: 'Undo', group: 'Core', chords: [{ key: 'z', mod: true }] },
-  { command: 'redo', label: 'Redo', group: 'Core', chords: [{ key: 'z', mod: true, shift: true }] },
+  { command: 'undo', label: 'Undo', group: 'Annotate', chords: [{ key: 'z', mod: true }] },
+  {
+    command: 'redo',
+    label: 'Redo',
+    group: 'Annotate',
+    chords: [{ key: 'z', mod: true, shift: true }],
+  },
   {
     command: 'submit',
-    label: 'Submit, open next',
-    group: 'Core',
+    label: 'Submit, open the next recording',
+    group: 'Finish',
     chords: [
       { code: 'Enter', mod: true },
-      { code: 'NumpadEnter', mod: true },
+      { code: 'NumpadEnter', mod: true, hidden: true },
     ],
   },
   {
@@ -80,14 +97,9 @@ export const BINDINGS = [
     chords: [{ code: 'ArrowRight', shift: true }],
     repeat: true,
   },
-  { command: 'rewind', label: 'Back 2 s', group: 'Navigate', chords: [{ key: 'a' }] },
-  { command: 'speed1', label: 'Speed 1×', group: 'Navigate', chords: [{ code: 'Digit1' }] },
-  { command: 'speed2', label: 'Speed 1.5×', group: 'Navigate', chords: [{ code: 'Digit2' }] },
-  { command: 'speed3', label: 'Speed 2×', group: 'Navigate', chords: [{ code: 'Digit3' }] },
-  { command: 'speed4', label: 'Speed 2.5×', group: 'Navigate', chords: [{ code: 'Digit4' }] },
   {
     command: 'skim',
-    label: 'Hold: skim at 4×',
+    label: 'Hold: skim at 6×',
     group: 'Navigate',
     chords: [{ key: 'f' }],
     hold: true,
@@ -105,55 +117,74 @@ export const BINDINGS = [
     chords: [{ code: 'BracketRight' }, { code: 'Tab' }],
   },
   {
+    command: 'zoomIn',
+    label: 'Zoom the timeline in',
+    group: 'Navigate',
+    chords: [
+      { code: 'Equal', mod: true },
+      { code: 'Equal', mod: true, shift: true, hidden: true },
+      { code: 'NumpadAdd', mod: true, hidden: true },
+    ],
+    repeat: true,
+  },
+  {
+    command: 'zoomOut',
+    label: 'Zoom the timeline out',
+    group: 'Navigate',
+    chords: [
+      { code: 'Minus', mod: true },
+      { code: 'NumpadSubtract', mod: true, hidden: true },
+    ],
+    repeat: true,
+  },
+  {
+    command: 'zoomFit',
+    label: 'Show the whole recording',
+    group: 'Navigate',
+    chords: [{ code: 'Digit0', mod: true }],
+  },
+  {
     command: 'nudgeBack1',
-    label: 'Nudge boundary −1 frame',
+    label: 'Move the selected boundary 1 frame earlier',
     group: 'Correct',
     chords: [{ code: 'Comma' }],
     repeat: true,
   },
   {
     command: 'nudgeForward1',
-    label: 'Nudge boundary +1 frame',
+    label: 'Move the selected boundary 1 frame later',
     group: 'Correct',
     chords: [{ code: 'Period' }],
     repeat: true,
   },
   {
     command: 'nudgeBack10',
-    label: 'Nudge boundary −10 frames',
+    label: 'Move the selected boundary 10 frames earlier',
     group: 'Correct',
     chords: [{ code: 'Comma', shift: true }],
     repeat: true,
   },
   {
     command: 'nudgeForward10',
-    label: 'Nudge boundary +10 frames',
+    label: 'Move the selected boundary 10 frames later',
     group: 'Correct',
     chords: [{ code: 'Period', shift: true }],
     repeat: true,
   },
   {
-    command: 'moveHere',
-    label: 'Move nearest boundary here',
-    group: 'Correct',
-    chords: [{ key: 't' }],
-  },
-  { command: 'flip', label: 'Flip keep/cut here', group: 'Correct', chords: [{ key: 'x' }] },
-  {
-    command: 'deleteBoundary',
-    label: 'Delete boundary',
+    command: 'deleteSelected',
+    label: 'Delete the selected boundary or interval',
     group: 'Correct',
     chords: [{ code: 'Backspace' }, { code: 'Delete' }],
   },
+  { command: 'noTask', label: 'No useful task…', group: 'Finish', chords: [{ key: 'n' }] },
+  { command: 'needsReview', label: 'Needs review…', group: 'Finish', chords: [{ key: 'q' }] },
   {
-    command: 'playAround',
-    label: 'Play around boundary',
-    group: 'Correct',
-    chords: [{ code: 'Slash' }],
+    command: 'help',
+    label: 'Command menu',
+    group: 'Help',
+    chords: [{ key: 'k', mod: true }, { key: 'h' }],
   },
-  { command: 'noTask', label: 'No useful task', group: 'Outcome', chords: [{ key: 'n' }] },
-  { command: 'needsReview', label: 'Needs review…', group: 'Outcome', chords: [{ key: 'q' }] },
-  { command: 'help', label: 'All keys', group: 'Help', chords: [{ key: 'h' }] },
 ] as const satisfies readonly Binding[];
 
 export type Command = (typeof BINDINGS)[number]['command'];
@@ -171,7 +202,7 @@ export const IS_MAC = /mac/i.test(platform);
 /**
  * Installs one capture-phase key listener for the whole page. `handlerFor` is asked at each key
  * press, so handlers always see current state; `enabled` says which commands apply right now
- * (e.g. only H while the help overlay is open). Returns the uninstaller.
+ * (e.g. only the command menu's own keys while it is open). Returns the uninstaller.
  */
 export function installKeymap(
   handlerFor: (command: Command) => KeyHandler,
@@ -240,9 +271,19 @@ const KEY_NAMES: Record<string, string> = {
   BracketRight: ']',
   Comma: ',',
   Period: '.',
-  Slash: '/',
   Tab: 'Tab',
+  Equal: '+',
+  Minus: '−',
 };
+
+/** The keys of a command as listed on screen, e.g. "⌘K or H". */
+export function keysOf(command: Command): string {
+  const binding: Binding | undefined = BINDINGS.find((b) => b.command === command);
+  return (binding?.chords ?? [])
+    .filter((chord) => !chord.hidden)
+    .map(chordLabel)
+    .join(' or ');
+}
 
 /** How a chord is written on screen: ⇧⌘Z on macOS, Shift+Ctrl+Z elsewhere. */
 export function chordLabel(chord: Chord): string {

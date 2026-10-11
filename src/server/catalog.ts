@@ -6,24 +6,29 @@
 import { readFile } from 'node:fs/promises';
 
 export interface Catalog {
-  readonly version: 1;
+  readonly version: 2;
   readonly createdAt: string;
-  /** The annotation guideline for this batch, shown in the tool and stamped on every save. */
-  readonly guideline: Guideline | null;
+  /** Task guides by id (the file name without .md). */
+  readonly tasks: Readonly<Record<string, TaskGuide>>;
   /** In queue order. */
   readonly recordings: readonly Recording[];
 }
 
-export interface Guideline {
+/** What to keep in a task's recordings, shown beside them and stamped on every save. */
+export interface TaskGuide {
   readonly path: string;
   readonly title: string;
   /** A content hash, so a save records exactly which text the annotator worked from. */
   readonly version: string;
+  /** Recording-id patterns from the guide's header. */
+  readonly recordings: readonly string[];
 }
 
 export interface Recording {
   readonly id: string;
   readonly durationS: number;
+  /** The task guide that covers it, or null. */
+  readonly task: string | null;
   /** Cameras, the reference camera (the one annotated) first. */
   readonly cameras: readonly Camera[];
   readonly thumbnails: Thumbnails | null;
@@ -57,7 +62,9 @@ export interface Thumbnails {
 
 export async function readCatalog(path: string): Promise<Catalog> {
   const catalog = JSON.parse(await readFile(path, 'utf8')) as Catalog;
-  if (catalog.version !== 1) throw new Error(`${path}: unsupported catalog version`);
+  if (catalog.version !== 2) {
+    throw new Error(`${path} was written by an older version: run pnpm ingest again`);
+  }
   return catalog;
 }
 

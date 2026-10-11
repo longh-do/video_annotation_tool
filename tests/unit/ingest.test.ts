@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { readCatalog } from '../../src/server/catalog.ts';
 import type { MediaTools } from '../../src/server/ffmpeg.ts';
 import { ingest } from '../../src/server/ingest.ts';
 import { tempDir, type WrittenRecording, writeRecording } from './fixtures.ts';
@@ -25,7 +26,7 @@ async function run(setup: (root: string) => Promise<WrittenRecording[]>, withToo
   const result = await ingest({
     dataDir: root,
     outDir,
-    guidelinePath: null,
+    tasksDir: null,
     tools: withTools ? fakeTools(written) : null,
   });
   return { ...result, root, outDir, written };
@@ -174,7 +175,7 @@ describe('ingest', () => {
     const { catalog } = await ingest({
       dataDir: root,
       outDir: join(root, 'derived'),
-      guidelinePath: null,
+      tasksDir: null,
       tools: { ...tools, sprites: async () => Promise.reject(new Error('ffmpeg crashed')) },
     });
     expect(catalog.recordings[0]).toMatchObject({
@@ -186,18 +187,50 @@ describe('ingest', () => {
     );
   });
 
-  test('stamps the guideline with its title and a content hash', async () => {
+  test('gives each recording the first task guide that covers it, and warns when several or none do', async () => {
     const root = await tempDir();
-    await writeRecording(root, { id: 'r' });
-    const guidelinePath = join(root, 'guide.md');
-    await writeFile(guidelinePath, '# Folding guideline\n\nKeep from first touch.\n');
-    const { catalog } = await ingest({
-      dataDir: root,
-      outDir: join(root, 'out'),
-      guidelinePath,
+    for (const id of ['cups-1', 'cups-2', 'other']) {
+      await writeRecording(join(root, 'data'), { id });
+    }
+    const tasksDir = join(root, 'tasks');
+    await mkdir(tasksDir);
+    await writeFile(join(tasksDir, 'a-cups.md'), '---\nrecordings: cups-*\n---\n\n# Cups\n');
+    await writeFile(join(tasksDir, 'b-first.md'), '---\nrecordings: cups-1\n---\n\n# First\n');
+    await writeFile(join(tasksDir, 'c-notes.md'), '# Notes without a header\n');
+    const { catalog, inspections, taskWarnings } = await ingest({
+      dataDir: join(root, 'data'),
+      outDir: join(root, 'derived'),
+      tasksDir,
       tools: null,
     });
-    expect(catalog.guideline).toMatchObject({ title: 'Folding guideline', path: guidelinePath });
-    expect(catalog.guideline?.version).toMatch(/^sha256:[0-9a-f]{12}$/);
+    expect(Object.keys(catalog.tasks)).toEqual(['a-cups', 'b-first']);
+    expect(catalog.recordings.map((r) => [r.id, r.task, r.warnings])).toEqual([
+      ['cups-1', 'a-cups', ['covered by several task guides (a-cups, b-first); using a-cups']],
+      ['cups-2', 'a-cups', []],
+      ['other', null, ['no task guide covers this recording']],
+    ]);
+    expect(inspections.map((i) => i.warnings)).toEqual(catalog.recordings.map((r) => r.warnings));
+    expect(taskWarnings).toEqual(['c-notes.md: no header naming its recordings; skipped it']);
+  });
+
+  test('without a tasks folder, no recording has a task or a warning about it', async () => {
+    const { catalog, taskWarnings } = await run(async (root) => [
+      await writeRecording(root, { id: 'r' }),
+    ]);
+    expect(catalog.tasks).toEqual({});
+    expect(catalog.recordings[0]).toMatchObject({ task: null, warnings: [] });
+    expect(taskWarnings).toEqual([]);
+  });
+
+  test('the server reads the catalog back, and refuses one written by an older version', async () => {
+    const { catalog, outDir } = await run(async (root) => [
+      await writeRecording(root, { id: 'r' }),
+    ]);
+    expect(await readCatalog(join(outDir, 'catalog.json'))).toEqual(catalog);
+    const old = join(outDir, 'old.json');
+    await writeFile(old, JSON.stringify({ version: 1, guideline: null, recordings: [] }));
+    await expect(readCatalog(old)).rejects.toThrow(
+      `${old} was written by an older version: run pnpm ingest again`,
+    );
   });
 });

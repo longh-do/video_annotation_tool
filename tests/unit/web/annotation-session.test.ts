@@ -23,6 +23,7 @@ const recording: LoadedRecording = {
       },
     ],
     thumbnails: null,
+    task: null,
   },
   frames: [frames],
   seekable: true,

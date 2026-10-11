@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Telemetry } from '../../../src/web/telemetry.ts';
 
-const place = { recordingId: 'rec', mediaPosNs: '3000000000000', playbackRate: 2 };
-const context = { annotatorId: 'a1', toolVersion: '0.1.0', guidelineVersion: null };
+const place = {
+  recordingId: 'rec',
+  guidelineVersion: 'sha256:0123456789ab',
+  mediaPosNs: '3000000000000',
+  playbackRate: 2,
+};
+const context = { annotatorId: 'a1', toolVersion: '0.1.0' };
 
 describe('telemetry', () => {
   let posts: { events: { event: string }[]; keepalive: boolean }[];

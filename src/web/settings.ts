@@ -1,10 +1,10 @@
 /**
- * Per-annotator conveniences kept in the browser: speed and sound stick between recordings, and
- * each recording reopens where it was left. Storage can be unavailable (private windows, blocked
- * site data); the defaults then apply. None of this is annotation data, so none of it is saved on
- * the server or makes a new revision.
+ * Per-annotator conveniences kept in the browser: speed, sound, the side panel's width and the
+ * camera shown big stick between recordings, and each recording reopens where it was left. Storage can be unavailable
+ * (private windows, blocked site data); the defaults then apply. None of this is annotation data,
+ * so none of it is saved on the server or makes a new revision.
  */
-type Settings = { speed: number; sound: boolean };
+type Settings = { speed: number; sound: boolean; panelWidth: number; mainCamera: string };
 
 export function readSetting<K extends keyof Settings>(key: K, fallback: Settings[K]): Settings[K] {
   return read(`setting.${key}`) ?? fallback;

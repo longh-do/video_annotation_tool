@@ -76,12 +76,55 @@ test('secondary cameras show their own frame nearest in source time, never the s
   }
 });
 
+test('a side camera plays along, shows large on a click, and marks still come from the head', async ({
+  page,
+}) => {
+  const [head, left] = await Promise.all(['head', 'left'].map(cameraFrames));
+  await open(page, 60);
+  await page.getByRole('button', { name: 'Show the left camera large' }).click();
+  await expect(page.locator('.camera-main video')).toHaveAttribute('data-camera', 'left');
+  // The head camera is small now, and a click brings it back.
+  await expect(page.getByRole('button', { name: 'Show the head camera large' })).toBeVisible();
+
+  // While playing, the left camera shows new pictures (counted as the browser presents them).
+  const presented = page.locator('video[data-camera="left"]').evaluate(
+    (video: HTMLVideoElement) =>
+      new Promise<number>((resolve) => {
+        let count = 0;
+        const counted = () => {
+          count++;
+          video.requestVideoFrameCallback(counted);
+        };
+        video.requestVideoFrameCallback(counted);
+        setTimeout(() => resolve(count), 900);
+      }),
+  );
+  await page.keyboard.press('Space');
+  expect(await presented).toBeGreaterThan(10);
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(400);
+  // Paused: the head camera's frame, and the left camera's frame nearest to it.
+  const frame = Number(await page.locator('.time').getAttribute('data-frame'));
+  expect(await shownFrame(page, HEAD)).toBe(frame);
+  await expect
+    .poll(() => shownFrame(page, 'video[data-camera="left"]'))
+    .toBe(nearestFrame(left!, frameNs(head!, frame)));
+  await page.keyboard.press('s');
+  const [mark] = await savedBoundaries(page, 1);
+  expect(mark).toMatchObject({ frame, origin: 'paused' });
+  // The filmstrip shows the camera that is large.
+  await expect(page.locator('.filmstrip legend')).toHaveText(/left camera/);
+  await page.keyboard.press('ControlOrMeta+z');
+  await savedBoundaries(page, 0);
+  await page.getByRole('button', { name: 'Show the head camera large' }).click();
+  await expect(page.locator('.camera-main video')).toHaveAttribute('data-camera', 'head');
+});
+
 test('pausing snaps the picture, currentTime, the readout and the next mark to one frame', async ({
   page,
 }) => {
   const head = await cameraFrames('head');
   await open(page, 0);
-  await page.keyboard.press('3');
   await page.keyboard.press('Space');
   await page.waitForTimeout(1200);
   await page.keyboard.press('Space');
@@ -100,40 +143,57 @@ test('pausing snaps the picture, currentTime, the readout and the next mark to o
   await savedBoundaries(page, 0);
 });
 
-test('speed keys and hold-to-skim', async ({ page }) => {
+test('the speed list, which sticks across a reload, and hold-to-skim', async ({ page }) => {
   await open(page, 0);
   const rate = () => page.locator(HEAD).evaluate((video: HTMLVideoElement) => video.playbackRate);
-  await page.keyboard.press('1');
-  await expect(page.locator('.speed')).toHaveText('1×');
-  expect(await rate()).toBe(1);
-  await page.keyboard.press('4');
-  await expect(page.locator('.speed')).toHaveText('2.5×');
-  expect(await rate()).toBe(2.5);
+  const pick = async (speed: string) => {
+    await page.locator('.speed').click();
+    await page.getByRole('menuitemradio', { name: new RegExp(`^${speed}`) }).click();
+  };
+  await expect(page.locator('.speed')).toHaveText('2×');
+  await pick('0.5×');
+  await expect(page.locator('.speed')).toHaveText('0.5×');
+  expect(await rate()).toBe(0.5);
+  await pick('3×');
+  expect(await rate()).toBe(3);
   await page.keyboard.down('f');
-  await expect(page.locator('.speed')).toHaveText('4× skim');
-  expect(await rate()).toBe(4);
+  await expect(page.locator('.speed')).toHaveText('6× skim');
+  expect(await rate()).toBe(6);
   await page.keyboard.up('f');
-  await expect(page.locator('.speed')).toHaveText('2.5×');
-  expect(await rate()).toBe(2.5);
+  await expect(page.locator('.speed')).toHaveText('3×');
+  expect(await rate()).toBe(3);
   await page.keyboard.press('Space');
-  await page.keyboard.press('3');
+  await page.reload();
+  await expect(page.locator('.speed')).toHaveText('3×');
+  await pick('2×');
 });
 
-test('H opens and closes the key list; Escape closes it; legend buttons act like keys', async ({
-  page,
-}) => {
+test('the command menu finds and runs commands; buttons act like keys', async ({ page }) => {
   await open(page, 60);
+  const menu = page.getByRole('dialog', { name: 'Command menu' });
   await page.keyboard.press('h');
-  await expect(page.getByRole('dialog', { name: 'All keys' })).toBeVisible();
-  await page.keyboard.press('s'); // ignored while the list is open
-  await page.keyboard.press('h');
-  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(menu).toBeVisible();
+  await page.keyboard.type('s'); // typed into the search, not a mark
+  await page.keyboard.press('ControlOrMeta+k');
+  await expect(menu).toBeHidden();
   await expect(page.locator('.state-chip')).toHaveAttribute('data-state', 'cut');
-  await page.keyboard.press('h');
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog')).toBeHidden();
+  // A click beside it closes it, as Escape does.
+  await page.keyboard.press('ControlOrMeta+k');
+  await page.mouse.click(5, 300);
+  await expect(menu).toBeHidden();
+  await page.getByRole('button', { name: 'Command menu' }).click();
+  await page.keyboard.type('forward 10');
+  await expect(menu.locator('.command')).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeHidden();
+  await expect(page.locator('.time[data-frame="70"]')).toBeVisible();
+  await page.keyboard.press('ArrowLeft'); // the keys work again
+  await expect(page.locator('.time[data-frame="69"]')).toBeVisible();
+  await page.keyboard.press('Shift+ArrowLeft');
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.time[data-frame="60"]')).toBeVisible();
 
-  await page.getByRole('button', { name: /Keep from here/ }).click();
+  await page.getByRole('button', { name: /^Start/ }).click();
   await expect(page.locator('.state-chip')).toHaveAttribute('data-state', 'keep');
   await page.keyboard.press('Space'); // a clicked button must not keep the focus that Space would press
   await expect(page.locator('.time')).not.toHaveAttribute('data-frame', '60');
@@ -199,14 +259,16 @@ test('Space at the last frame stays there instead of starting over', async ({ pa
   expect(Number(await page.locator('.time').getAttribute('data-frame'))).toBeGreaterThan(last - 3);
 });
 
-test('after the key list closes, Space plays again (focus is handed back)', async ({ page }) => {
+test('after the command menu closes, Space plays again (focus is handed back)', async ({
+  page,
+}) => {
   await open(page, 30);
   await page.keyboard.press('h');
   await page.keyboard.press('Tab');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toBeHidden();
   await page.keyboard.press('Space');
-  await expect(page.locator('.sound')).toHaveText('Sound on');
+  await expect(page.getByRole('button', { name: 'Mute the ticks' })).toBeVisible();
   await expect(page.locator('.time')).not.toHaveAttribute('data-frame', '30');
   await page.keyboard.press('Space');
 });

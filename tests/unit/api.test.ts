@@ -1,4 +1,4 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { createServer, request } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -21,18 +21,28 @@ import { tempDir, writeRecording } from './fixtures.ts';
 
 let root = '';
 let base = '';
+let taskVersion = '';
 const server = createServer();
 
 beforeAll(async () => {
   root = await tempDir();
   await writeRecording(root, { id: 'rec-a' });
   await writeRecording(root, { id: 'rec-b', layout: 'split' });
+  await writeRecording(root, { id: 'rec-c' });
+  // A task guide for rec-a and rec-b; rec-c has no task.
+  const tasksDir = join(root, 'tasks');
+  await mkdir(tasksDir);
+  await writeFile(
+    join(tasksDir, 'stack-cups.md'),
+    '---\nrecordings: rec-a, rec-b\n---\n\n# Stack the cups\n\nKeep from the first touch.\n',
+  );
   const { catalog } = await ingest({
     dataDir: root,
     outDir: join(root, 'derived'),
-    guidelinePath: null,
+    tasksDir,
     tools: null,
   });
+  taskVersion = catalog.tasks['stack-cups']?.version ?? '';
   const api = createApi({
     catalog,
     store: new AnnotationStore(join(root, 'annotations')),
@@ -51,15 +61,15 @@ beforeAll(async () => {
 });
 afterAll(() => new Promise<void>((done) => server.close(() => done())));
 
-/** A valid save body for rec-a: keep frames 5–20, the second mark still unchecked. */
-async function body(status = 'not_reviewed') {
-  const frames = parseFramesCsv(await readFile(join(root, 'rec-a', 'head-frames.csv'), 'utf8'));
+/** A valid save body for rec-a (or rec-c): keep frames 5–20, the second mark still unchecked. */
+async function body(status = 'not_reviewed', id = 'rec-a') {
+  const frames = parseFramesCsv(await readFile(join(root, id, 'head-frames.csv'), 'utf8'));
   let t = emptyTimeline(50);
   t = setStateFrom(t, 5, 'keep', 'paused');
   t = setStateFrom(t, 20, 'cut', 'live');
   return {
     annotation: {
-      recording_id: 'rec-a',
+      recording_id: id,
       reference_video: 'videos/head-0000.mp4',
       status,
       keep_intervals: keepIntervals(t, frames),
@@ -78,8 +88,8 @@ async function body(status = 'not_reviewed') {
 
 const json = async <T>(res: Response | Promise<Response>) => (await (await res).json()) as T;
 
-const put = (revision: string | null, payload: unknown) =>
-  fetch(`${base}/api/annotations/rec-a`, {
+const put = (revision: string | null, payload: unknown, id = 'rec-a') =>
+  fetch(`${base}/api/annotations/${id}`, {
     method: 'PUT',
     headers: revision === null ? {} : { 'If-Match': revision },
     body: JSON.stringify(payload),
@@ -88,13 +98,18 @@ const put = (revision: string | null, payload: unknown) =>
 describe('API', () => {
   test('lists the queue in catalog order', async () => {
     const queue = await json<QueueResponse>(fetch(`${base}/api/queue`));
-    expect(queue.session).toMatchObject({ annotatorId: 'tester', toolVersion: '0.0.0-test' });
-    expect(queue.recordings.map((r) => r.id)).toEqual(['rec-a', 'rec-b']);
+    expect(queue.session).toEqual({ annotatorId: 'tester', toolVersion: '0.0.0-test' });
+    expect(queue.recordings.map((r) => r.id)).toEqual(['rec-a', 'rec-b', 'rec-c']);
     expect(queue.recordings[0]).toMatchObject({ status: 'not_reviewed', keepIntervals: 0 });
   });
 
-  test('describes a recording with media URLs, reference camera first', async () => {
+  test('describes a recording with its task and media URLs, reference camera first', async () => {
     const recording = await json<RecordingResponse>(fetch(`${base}/api/recordings/rec-b`));
+    expect(recording.task).toEqual({
+      id: 'stack-cups',
+      title: 'Stack the cups',
+      version: taskVersion,
+    });
     expect(recording.cameras[0]).toMatchObject({
       label: 'head',
       video: 'videos/head-0000.mp4',
@@ -102,7 +117,22 @@ describe('API', () => {
       framesUrl: '/media/rec-b/head-frames.csv',
       frameCount: 50,
     });
+    const untasked = await json<RecordingResponse>(fetch(`${base}/api/recordings/rec-c`));
+    expect(untasked.task).toBeNull();
     expect((await fetch(`${base}/api/recordings/nope`)).status).toBe(404);
+  });
+
+  test('serves a task guide as Markdown without its header', async () => {
+    const res = await fetch(`${base}/api/tasks/stack-cups`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/markdown; charset=utf-8');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    const text = await res.text();
+    expect(text).toBe('# Stack the cups\n\nKeep from the first touch.\n');
+    expect(text).not.toContain('recordings:');
+    expect((await fetch(`${base}/api/tasks/nope`)).status).toBe(404);
+    // Only the catalog's own tasks, not what every object has.
+    expect((await fetch(`${base}/api/tasks/constructor`)).status).toBe(404);
   });
 
   test('serves media through the catalog only, with byte ranges', async () => {
@@ -142,11 +172,36 @@ describe('API', () => {
     expect(record.sidecar).toMatchObject({
       revision: 2,
       annotator_id: 'tester',
+      guideline_version: taskVersion,
       tool_version: '0.0.0-test',
     });
 
     const queue = await json<QueueResponse>(fetch(`${base}/api/queue`));
     expect(queue.recordings[0]).toMatchObject({ status: 'complete', keepIntervals: 1 });
+  });
+
+  test('an edited guide shows at once, and saves are stamped with its new version', async () => {
+    const path = join(root, 'tasks', 'stack-cups.md');
+    const before = await readFile(path, 'utf8');
+    try {
+      await writeFile(path, before.replace('# Stack the cups', '# Stack the red cups'));
+      const recording = await json<RecordingResponse>(fetch(`${base}/api/recordings/rec-a`));
+      expect(recording.task?.title).toBe('Stack the red cups');
+      expect(recording.task?.version).not.toBe(taskVersion);
+      expect(await (await fetch(`${base}/api/tasks/stack-cups`)).text()).toContain('red cups');
+      const { revision } = await json<SavedAnnotation>(fetch(`${base}/api/annotations/rec-a`));
+      expect((await put(`"${revision}"`, await body())).status).toBe(200);
+      const record = await json<SavedAnnotation>(fetch(`${base}/api/annotations/rec-a`));
+      expect(record.sidecar?.guideline_version).toBe(recording.task?.version);
+    } finally {
+      await writeFile(path, before);
+    }
+  });
+
+  test('stamps a recording without a task with no guideline version', async () => {
+    expect((await put('"0"', await body('not_reviewed', 'rec-c'), 'rec-c')).status).toBe(200);
+    const record = await json<SavedAnnotation>(fetch(`${base}/api/annotations/rec-c`));
+    expect(record.sidecar).toMatchObject({ annotator_id: 'tester', guideline_version: null });
   });
 
   test('refuses a save without If-Match, or one that breaks the contract', async () => {

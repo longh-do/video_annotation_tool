@@ -15,7 +15,7 @@ function fakePlayer(frame: number, playing: boolean) {
   const seeks: number[] = [];
   const player = {
     frame,
-    snapshot: { frame, playing, speed: 2, skimming: false, around: false, seekFailed: false },
+    snapshot: { frame, playing, speed: 2, skimming: false, seekFailed: false },
     seek(to: number) {
       seeks.push(to);
       player.frame = to;
@@ -26,6 +26,7 @@ function fakePlayer(frame: number, playing: boolean) {
 
 function setup(frame: number, playing: boolean, canEdit = true) {
   const { player, seeks } = fakePlayer(frame, playing);
+  const zooms: string[] = [];
   const editor = new Store<EditorState, EditorAction>(
     editorReducer,
     createEditor(emptyTimeline(200)),
@@ -35,7 +36,7 @@ function setup(frame: number, playing: boolean, canEdit = true) {
     editor,
     canEdit: () => canEdit && editor.getState().history.gestureBase === null,
     sound: () => false,
-    setSpeed: () => {},
+    zoom: (how: string) => void zooms.push(how),
     toggleHelp: () => {},
     submit: () => {},
     noTask: () => {},
@@ -46,7 +47,7 @@ function setup(frame: number, playing: boolean, canEdit = true) {
     const handler = commands[command];
     if (typeof handler === 'function') handler();
   };
-  return { player, editor, run, seeks, pointer: createPointerActions(context) };
+  return { player, editor, run, seeks, zooms, pointer: createPointerActions(context) };
 }
 
 const boundaries = (editor: Store<EditorState, EditorAction>) =>
@@ -70,11 +71,13 @@ describe('commands', () => {
     expect(boundaries(editor)).toEqual([]);
   });
 
-  test('Enter does nothing during playback: a live mark is never confirmed unseen', () => {
-    const { editor, run } = setup(40, true);
+  test('Enter during playback stops on the next mark to check, never confirming it unseen', () => {
+    const { editor, run, seeks } = setup(40, true);
     run('keep');
     run('accept');
     expect(boundaries(editor)[0]?.checked).toBe(false);
+    expect(seeks.at(-1)).toBe(40);
+    expect(editor.getState().selected).toBe(40);
   });
 
   test('Enter goes to the next rough mark first, and confirms it only once it is on screen', () => {
@@ -110,14 +113,50 @@ describe('commands', () => {
     expect(seeks.at(-1)).toBe(40);
   });
 
-  test('Enter while playing around a rough mark ends the replay on it and confirms it', () => {
-    const { player, editor, run, seeks } = setup(40, true);
-    run('keep');
-    Object.assign(player.snapshot, { around: true });
-    player.frame = 52; // the replay has gone past the mark
-    run('accept');
-    expect(seeks[0]).toBe(40);
-    expect(boundaries(editor)[0]?.checked).toBe(true);
+  test('the zoom keys zoom the timeline', () => {
+    const { run, zooms } = setup(40, false, false);
+    run('zoomIn');
+    run('zoomOut');
+    run('zoomFit');
+    expect(zooms).toEqual(['in', 'out', 'fit']);
+  });
+
+  test("a badge click deletes that boundary; the menu's ranges delete and merge intervals", () => {
+    const { editor, pointer } = setup(40, false);
+    for (const [frame, state] of [
+      [10, 'keep'],
+      [20, 'cut'],
+      [30, 'keep'],
+      [40, 'cut'],
+    ] as const) {
+      editor.dispatch({ type: 'mark', frame, state, origin: 'paused' });
+    }
+    pointer.setRange(20, 30, 'keep'); // merge
+    expect(boundaries(editor).map((b) => b.frame)).toEqual([10, 40]);
+    pointer.deleteBoundary(1);
+    expect(boundaries(editor).map((b) => b.frame)).toEqual([10]);
+    pointer.setRange(10, 200, 'cut'); // delete the interval
+    expect(boundaries(editor)).toEqual([]);
+  });
+
+  test('selecting an interval shows the frame asked for, or stays put', () => {
+    const { editor, pointer, seeks } = setup(40, false);
+    editor.dispatch({ type: 'mark', frame: 10, state: 'keep', origin: 'paused' });
+    pointer.selectInterval(10, 25);
+    expect(editor.getState()).toMatchObject({ interval: 10, selected: null });
+    expect(seeks.at(-1)).toBe(25);
+    pointer.selectInterval(null, null);
+    expect(editor.getState().interval).toBe(null);
+    expect(seeks).toHaveLength(1);
+  });
+
+  test('Backspace deletes the selected interval when no boundary is selected', () => {
+    const { editor, run, pointer } = setup(40, false);
+    editor.dispatch({ type: 'mark', frame: 10, state: 'keep', origin: 'paused' });
+    editor.dispatch({ type: 'mark', frame: 20, state: 'cut', origin: 'paused' });
+    pointer.selectInterval(10, null);
+    run('deleteSelected');
+    expect(boundaries(editor)).toEqual([]);
   });
 
   test('a thumbnail click moves the selected boundary there and shows it', () => {
@@ -148,13 +187,15 @@ describe('commands', () => {
     expect(seeks.at(-1)).toBe(40);
   });
 
-  test('no thumbnail click or drag edits while editing is off', () => {
+  test('no thumbnail click, drag, badge or menu edits while editing is off', () => {
     const { editor, pointer } = setup(40, false, false);
     editor.dispatch({ type: 'mark', frame: 40, state: 'keep', origin: 'live' });
     pointer.pick(30);
     pointer.dragStart(0);
     pointer.drag(0, 50);
     pointer.dragEnd();
+    pointer.deleteBoundary(0);
+    pointer.setRange(40, 200, 'cut');
     expect(boundaries(editor)[0]?.frame).toBe(40);
   });
 });

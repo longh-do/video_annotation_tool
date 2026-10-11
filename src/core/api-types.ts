@@ -4,7 +4,6 @@ import type { AnnotationFile, Sidecar, SidecarDraft, Status } from './annotation
 export interface Session {
   readonly annotatorId: string;
   readonly toolVersion: string;
-  readonly guideline: { readonly title: string; readonly version: string } | null;
 }
 
 export interface QueueItem {
@@ -42,9 +41,19 @@ export interface ThumbnailInfo {
   readonly frames: readonly number[];
 }
 
+/** The guide of a recording's task, as the browser sees it. */
+export interface TaskInfo {
+  readonly id: string;
+  readonly title: string;
+  /** A content hash; the server stamps it on every save of the recording. */
+  readonly version: string;
+}
+
 export interface RecordingResponse {
   readonly id: string;
   readonly durationS: number;
+  /** What to keep in this recording; null if no task guide covers it. */
+  readonly task: TaskInfo | null;
   /** The reference camera (the one annotated) first. */
   readonly cameras: readonly CameraInfo[];
   readonly thumbnails: ThumbnailInfo | null;

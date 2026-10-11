@@ -6,7 +6,6 @@ const STOPPED: PlayerSnapshot = {
   playing: false,
   speed: 2,
   skimming: false,
-  around: false,
   seekFailed: false,
 };
 const noSubscription = () => () => {};

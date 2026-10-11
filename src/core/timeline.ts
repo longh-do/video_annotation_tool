@@ -21,7 +21,7 @@ export type State = (typeof STATES)[number];
 export const ORIGINS = [
   'live', // set from the playhead during playback: late by the annotator's reaction time
   'paused', // set with S or D while paused
-  'placed', // put on a chosen frame: a filmstrip click, or T while paused
+  'placed', // put on a chosen frame: a filmstrip click, or an edge of a range set from the menu
   'drag', // dragged on the timeline
   'nudge', // stepped frame by frame
 ] as const;
@@ -85,8 +85,8 @@ export function setStateFrom(t: Timeline, frame: number, state: State, origin: O
 }
 
 /**
- * Nudge, drag, T and filmstrip clicks. Clamped between the neighbours, never past them. Choosing
- * the frame a live mark already sits on confirms it, like Enter in the check pass.
+ * Nudge, drag and filmstrip clicks. Clamped between the neighbours, never past them. Choosing the
+ * frame a live mark already sits on confirms it, like Enter in the check pass.
  */
 export function moveBoundary(t: Timeline, index: number, frame: number, origin: Origin): Timeline {
   const boundary = boundaryAt(t, index);
@@ -99,17 +99,33 @@ export function moveBoundary(t: Timeline, index: number, frame: number, origin: 
   return withBoundaries(t, t.boundaries.with(index, moved));
 }
 
-/** X: flip the run under `frame` between keep and cut, up to the next boundary. */
-export function flipSegmentAt(t: Timeline, frame: number): Timeline {
-  assertFrame(t, frame);
-  const i = boundaryIndexAt(t, frame);
-  const boundary = t.boundaries[i];
-  if (!boundary) {
-    // Before the first boundary everything is cut: keep from the very first frame instead.
-    const first: Boundary = { frame: 0, state: 'keep', origin: 'placed', checked: true };
-    return withBoundaries(t, [first, ...t.boundaries]);
+/**
+ * The timeline's right-click menu: every frame in [from, to) becomes `state` — deleting an
+ * interval, merging two by keeping the gap between them, keeping a cut stretch. The boundaries
+ * inside the range go, through boundaries included; the frames outside it keep their state, and
+ * a boundary that stays keeps its origin and check.
+ */
+export function setRange(t: Timeline, from: number, to: number, state: State): Timeline {
+  assertFrame(t, from);
+  if (!Number.isInteger(to) || to <= from || to > t.frameCount) {
+    throw new RangeError(`range end ${to} is outside ${from + 1}..${t.frameCount}`);
   }
-  return withBoundaries(t, t.boundaries.with(i, { ...boundary, state: opposite(boundary.state) }));
+  const before = t.boundaries.filter((b) => b.frame < from);
+  const boundaries = [...before];
+  if ((before.at(-1)?.state ?? 'cut') !== state) {
+    const existing = t.boundaries.find((b) => b.frame === from);
+    boundaries.push(existing?.state === state ? existing : placed(from, state));
+  }
+  if (to < t.frameCount) {
+    // From `to` on, the frames keep the state they had.
+    const resume = stateAt(t, to);
+    const existing = t.boundaries.find((b) => b.frame === to);
+    if (resume !== state) boundaries.push(existing ?? placed(to, resume));
+  }
+  boundaries.push(...t.boundaries.filter((b) => b.frame > to));
+  const same =
+    boundaries.length === t.boundaries.length && boundaries.every((b, i) => b === t.boundaries[i]);
+  return same ? t : withBoundaries(t, boundaries);
 }
 
 /** Backspace: remove a boundary; the run before it extends to the next one. */
@@ -159,17 +175,6 @@ export function keepSegments(t: Timeline): Segment[] {
   return segments(t).filter((s) => s.state === 'keep');
 }
 
-/** Index of the boundary nearest to `frame` (the earlier one on a tie), or -1 if there are none. */
-export function nearestBoundary(t: Timeline, frame: number): number {
-  const before = boundaryIndexAt(t, frame);
-  const after = before + 1;
-  if (after >= t.boundaries.length) return before;
-  if (before < 0) return after;
-  const toBefore = frame - t.boundaries[before]!.frame;
-  const toAfter = t.boundaries[after]!.frame - frame;
-  return toBefore <= toAfter ? before : after;
-}
-
 function boundaryAt(t: Timeline, index: number): Boundary {
   const boundary = t.boundaries[index];
   if (!boundary) throw new RangeError(`no boundary at index ${index}`);
@@ -186,6 +191,6 @@ function withBoundaries(t: Timeline, boundaries: readonly Boundary[]): Timeline 
   return { frameCount: t.frameCount, boundaries };
 }
 
-function opposite(state: State): State {
-  return state === 'keep' ? 'cut' : 'keep';
+function placed(frame: number, state: State): Boundary {
+  return { frame, state, origin: 'placed', checked: true };
 }

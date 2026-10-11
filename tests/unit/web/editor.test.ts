@@ -42,24 +42,95 @@ describe('editor', () => {
     expect(later.history.past).toHaveLength(state.history.past.length + 1);
   });
 
-  test('nudging, deleting or T without a boundary to act on changes nothing', () => {
+  test('nudging or deleting without a boundary or interval to act on changes nothing', () => {
     const start = createEditor(emptyTimeline(100));
     expect(editorReducer(start, { type: 'nudge', delta: 1, now: 0 })).toBe(start);
     expect(editorReducer(start, { type: 'delete-selected' })).toBe(start);
-    expect(editorReducer(start, { type: 'move-nearest', frame: 5, origin: 'placed' })).toBe(start);
+    expect(editorReducer(start, { type: 'delete-boundary', index: 0 })).toBe(start);
   });
 
-  test('T moves the nearest boundary to the playhead; Backspace deletes the selected one', () => {
+  test('Backspace deletes the selected boundary, or else the selected interval', () => {
     const state = run([
       { type: 'mark', frame: 10, state: 'keep', origin: 'live' },
       { type: 'mark', frame: 40, state: 'cut', origin: 'live' },
-      { type: 'move-nearest', frame: 35, origin: 'placed' },
     ]);
-    expect(frames(state)).toEqual([10, 35]);
-    expect(state.selected).toBe(35);
     const deleted = editorReducer(state, { type: 'delete-selected' });
     expect(frames(deleted)).toEqual([10]);
     expect(deleted.selected).toBeNull();
+    const interval = run(
+      [{ type: 'select-interval', start: 10 }, { type: 'delete-selected' }],
+      state,
+    );
+    expect(frames(interval)).toEqual([]);
+    expect(interval).toMatchObject({ selected: null, interval: null });
+  });
+
+  test('selecting an interval drops the boundary selection, and the other way round', () => {
+    const marked = run([
+      { type: 'mark', frame: 10, state: 'keep', origin: 'paused' },
+      { type: 'mark', frame: 30, state: 'cut', origin: 'paused' },
+    ]);
+    const interval = editorReducer(marked, { type: 'select-interval', start: 10 });
+    expect(interval).toMatchObject({ selected: null, anchor: null, interval: 10 });
+    expect(editorReducer(interval, { type: 'select', frame: 30 })).toMatchObject({
+      selected: 30,
+      interval: null,
+    });
+  });
+
+  test('a merge keeps the merged interval selected; a deleted interval leaves nothing selected', () => {
+    const marked = run([
+      { type: 'mark', frame: 10, state: 'keep', origin: 'paused' },
+      { type: 'mark', frame: 30, state: 'cut', origin: 'paused' },
+      { type: 'mark', frame: 50, state: 'keep', origin: 'paused' },
+      { type: 'mark', frame: 70, state: 'cut', origin: 'paused' },
+    ]);
+    const merged = editorReducer(marked, { type: 'set-range', from: 30, to: 50, state: 'keep' });
+    expect(frames(merged)).toEqual([10, 70]);
+    expect(merged).toMatchObject({ selected: null, interval: 10 });
+    const deleted = editorReducer(merged, { type: 'set-range', from: 10, to: 70, state: 'cut' });
+    expect(frames(deleted)).toEqual([]);
+    expect(deleted.interval).toBeNull();
+    // Undo brings the interval back; the selection is view state, so it stays as it was.
+    expect(frames(editorReducer(deleted, { type: 'undo' }))).toEqual([10, 70]);
+  });
+
+  test('trimming the selected interval keeps it selected, following its start', () => {
+    const marked = run([
+      { type: 'mark', frame: 10, state: 'keep', origin: 'paused' },
+      { type: 'mark', frame: 30, state: 'cut', origin: 'paused' },
+      { type: 'select-interval', start: 10 },
+    ]);
+    const trimmed = run(
+      [
+        { type: 'drag-start', index: 0 },
+        { type: 'move', index: 0, frame: 14, origin: 'drag' },
+        { type: 'drag-end' },
+      ],
+      marked,
+    );
+    expect(trimmed).toMatchObject({ selected: 14, interval: 14 });
+    expect(editorReducer(trimmed, { type: 'undo' })).toMatchObject({ selected: 10, interval: 10 });
+    // Grabbing a boundary of another interval drops the selection.
+    const other = run(
+      [
+        { type: 'mark', frame: 50, state: 'keep', origin: 'paused' },
+        { type: 'select-interval', start: 10 },
+        { type: 'drag-start', index: 2 },
+      ],
+      marked,
+    );
+    expect(other).toMatchObject({ selected: 50, interval: null });
+    // Escape during a drag of its start puts the interval back, still selected.
+    const cancelled = run(
+      [
+        { type: 'drag-start', index: 0 },
+        { type: 'move', index: 0, frame: 14, origin: 'drag' },
+        { type: 'drag-cancel' },
+      ],
+      marked,
+    );
+    expect(cancelled).toMatchObject({ selected: 10, interval: 10 });
   });
 
   test('undoing a nudge keeps the moved boundary selected, where work on it began', () => {

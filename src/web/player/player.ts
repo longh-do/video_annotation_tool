@@ -3,30 +3,28 @@
  * FrameClock and SeekQueue. React reads it through `subscribe` and `snapshot`
  * (useSyncExternalStore); the snapshot changes with every presented frame.
  */
-import { displayedFrame, type FrameMap, frameCount } from '../../core/frame-map.ts';
+import { type FrameMap, frameCount } from '../../core/frame-map.ts';
 import { FrameClock, type SeekResult } from './frame-clock.ts';
 import { SeekQueue } from './seek-queue.ts';
 
-/** Marking speeds (keys 1–4). Faster than 2.5× hurts accuracy, so marking never goes there. */
-export const SPEEDS = [1, 1.5, 2, 2.5] as const;
+/**
+ * The speeds the annotator can pick. 2× is the default: marking gets less accurate above it, so
+ * faster speeds are the annotator's call (live marks are checked afterwards either way).
+ */
+export const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4] as const;
 export const DEFAULT_SPEED = 2;
 /** Hold F to skim obvious downtime. */
-export const SKIM_SPEED = 4;
+export const SKIM_SPEED = 6;
 /** After pause() the picture keeps moving for a moment; wait before snapping to it. */
 const PAUSE_SETTLE_MS = 80;
-/** /: how far around a boundary to play, and how fast. */
-const AROUND_US = 1_000_000;
-export const AROUND_SPEED = 0.5;
 
 export interface PlayerSnapshot {
   /** The frame on screen; -1 until the first one is presented. */
   readonly frame: number;
   readonly playing: boolean;
-  /** The marking speed; skimming and playing around a boundary override it meanwhile. */
+  /** The marking speed; skimming overrides it meanwhile. */
   readonly speed: number;
   readonly skimming: boolean;
-  /** Playing a second either side of a boundary (/), at half speed. */
-  readonly around: boolean;
   /** A paused seek could not be verified: the screen may not show the frame a mark would save. */
   readonly seekFailed: boolean;
 }
@@ -41,8 +39,6 @@ export class Player {
   #snapshot: PlayerSnapshot;
   /** Counts seek requests, so a pause snap can tell that a newer seek has overtaken it. */
   #seeks = 0;
-  /** Ends a play-around early; set while one runs. */
-  #stopAround: (() => void) | null = null;
 
   constructor(video: HTMLVideoElement, frames: FrameMap, speed: number) {
     this.#video = video;
@@ -54,7 +50,6 @@ export class Player {
       playing: false,
       speed,
       skimming: false,
-      around: false,
       seekFailed: false,
     };
     video.playbackRate = speed;
@@ -129,52 +124,13 @@ export class Player {
   /** Pause and show `frame` exactly. */
   seek(frame: number): void {
     this.#seeks++;
-    this.#stopAround?.();
     if (!this.#video.paused) this.#video.pause();
     this.#queue.request(Math.min(Math.max(frame, 0), this.lastFrame));
-  }
-
-  /** A: jump back a little; keeps playing if it was. */
-  rewind(seconds: number): void {
-    const from = this.#frames.ptsUs[Math.max(this.frame, 0)] ?? 0;
-    const frame = Math.max(displayedFrame(this.#frames, 0, from / 1e6 - seconds), 0);
-    if (this.#video.paused) this.seek(frame);
-    else this.#video.currentTime = this.clock.seekTime(frame);
   }
 
   setSpeed(speed: number): void {
     if (!this.#snapshot.skimming) this.#video.playbackRate = speed;
     this.#update({ speed });
-  }
-
-  /**
-   * /: play from a second before `frame` to a second after it at half speed, then come back to
-   * it. Any pause or seek ends it early.
-   */
-  playAround(frame: number): void {
-    this.#stopAround?.();
-    const at = this.#frames.ptsUs[frame] ?? 0;
-    const from = Math.max(displayedFrame(this.#frames, 0, (at - AROUND_US) / 1e6), 0);
-    const until = displayedFrame(this.#frames, 0, (at + AROUND_US) / 1e6);
-    const stop = () => {
-      unsubscribe();
-      this.#video.removeEventListener('pause', stop);
-      this.#video.playbackRate = this.#snapshot.speed;
-      this.#stopAround = null;
-      this.#update({ around: false });
-    };
-    const unsubscribe = this.clock.subscribe((shown) => {
-      if (shown < until) return;
-      stop();
-      this.seek(frame);
-    });
-    this.#stopAround = stop;
-    this.#queue.cancel();
-    this.#video.currentTime = this.clock.seekTime(from);
-    this.#video.playbackRate = AROUND_SPEED;
-    this.#video.addEventListener('pause', stop);
-    this.#update({ around: true });
-    void this.#video.play();
   }
 
   /** Hold F: play at skim speed; on release, carry on at the marking speed. */
