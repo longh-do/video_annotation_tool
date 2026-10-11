@@ -19,11 +19,9 @@ export class Store<S, A> {
   dispatch = (action: A): S => {
     const before = this.#state;
     const next = this.#reducer(before, action);
-    if (next !== before) {
-      this.#state = next;
-      for (const observer of this.#observers) observer(action, before, next);
-      for (const listener of this.#listeners) listener();
-    }
+    this.#state = next;
+    for (const observer of this.#observers) observer(action, before, next);
+    if (next !== before) for (const listener of this.#listeners) listener();
     return next;
   };
 
@@ -32,7 +30,7 @@ export class Store<S, A> {
     return () => this.#listeners.delete(listener);
   };
 
-  /** Like subscribe, with the action that changed the state and the states around it. */
+  /** Sees every action with the states around it, even an action that changed nothing. */
   observe(observer: (action: A, before: S, after: S) => void): () => void {
     this.#observers.add(observer);
     return () => this.#observers.delete(observer);

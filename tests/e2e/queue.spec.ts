@@ -181,3 +181,114 @@ test('an edit that never reached the server is recovered after the tab is killed
     )
     .toEqual([40]);
 });
+
+test('⌘↵ on a recording with nothing kept asks, as N does; a second ⌘↵ never submits the next', async ({
+  page,
+}) => {
+  await open(page, first.id, 0);
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(page.getByRole('alertdialog')).toContainText('No useful task');
+  await page.keyboard.press('Escape');
+  expect((await saved(page.request, first.id))?.annotation.status ?? 'not_reviewed').toBe(
+    'not_reviewed',
+  );
+
+  await markInterval(page, 10, 20);
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(page.locator('.recording-id')).toHaveText(second.id);
+  await page.waitForTimeout(500);
+  expect((await saved(page.request, first.id))?.annotation.status).toBe('complete');
+  expect((await saved(page.request, second.id))?.annotation.status ?? 'not_reviewed').toBe(
+    'not_reviewed',
+  );
+});
+
+test('keys pressed while an outcome is handed over do nothing', async ({ page }) => {
+  await open(page, first.id, 0);
+  await markInterval(page, 10, 20);
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await page.keyboard.press('x');
+  await expect(page.locator('.recording-id')).toHaveText(second.id);
+  await page.waitForTimeout(500);
+  expect((await saved(page.request, first.id))?.annotation).toMatchObject({
+    status: 'complete',
+    keep_intervals: [expect.anything()],
+  });
+});
+
+test('in the review dialog, Enter on a reason picks it; it sends only from the note', async ({
+  page,
+}) => {
+  await open(page, first.id, 0);
+  await markInterval(page, 10, 20);
+  await page.keyboard.press('q');
+  await page.keyboard.press('1'); // the note field takes the focus
+  await page.keyboard.press('Shift+Tab'); // back onto "Other"
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('dialog', { name: 'Needs review' })).toBeVisible();
+  await page.keyboard.type('a third arm came in');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.recording-id')).toHaveText(second.id);
+  const result = await saved(page.request, first.id);
+  expect(result?.sidecar?.review_reason).toBe('other');
+  expect(result?.annotation.notes).toBe('Other: a third arm came in');
+});
+
+test('a question waits while the queue is open, without taking its keys', async ({ page }) => {
+  await open(page, first.id, 0);
+  await markInterval(page, 10, 20);
+  await page.keyboard.press('n');
+  await page.getByRole('button', { name: 'Queue' }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('alertdialog')).toContainText('No useful task');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('alertdialog')).toBeHidden();
+  await expect(page.locator('.recording-id')).toHaveText(first.id);
+  await expect(page.locator('.save-chip')).toHaveAttribute('data-save', 'saved');
+  expect((await saved(page.request, first.id))?.annotation).toMatchObject({
+    status: 'not_reviewed',
+    keep_intervals: [expect.anything()],
+  });
+});
+
+test('a recording that fails to open is reported, and the one on screen stays', async ({
+  page,
+}) => {
+  await open(page, first.id, 0);
+  await page.route(`**/api/annotations/${second.id}`, (route) => route.abort());
+  await page.getByRole('button', { name: 'Queue' }).click();
+  await page.getByRole('button', { name: new RegExp(second.id) }).click();
+  await expect(page.locator('.toast')).toContainText(`Couldn't open ${second.id}`);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.recording-id')).toHaveText(first.id);
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.time[data-frame="1"]')).toBeVisible();
+});
+
+test('two tabs on one recording: the stale one stops saving instead of overwriting', async ({
+  page,
+  browser,
+}) => {
+  await open(page, first.id, 30);
+  await page.keyboard.press('s');
+  await expect
+    .poll(async () => (await saved(page.request, first.id))?.sidecar?.boundaries.length)
+    .toBe(1);
+  const other = await (await browser.newContext()).newPage();
+  await open(other, first.id, 60);
+  await other.keyboard.press('d');
+  await expect
+    .poll(async () => (await saved(page.request, first.id))?.sidecar?.boundaries.length)
+    .toBe(2);
+
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('d');
+  await expect(page.locator('.save-chip')).toHaveAttribute('data-save', 'conflict');
+  await expect(page.getByRole('alert')).toContainText('saved from another tab');
+  // The other tab's save stands.
+  const frames = (await saved(page.request, first.id))?.sidecar?.boundaries.map((b) => b.frame);
+  expect(frames).toEqual([30, 60]);
+  await other.context().close();
+});

@@ -11,72 +11,47 @@ export interface EditEvent {
 }
 
 /**
- * The events for an action that changed the editor. A rough mark that ends up checked, whether by
- * Enter or by moving it, also yields `boundary_accepted`: the check pass is measured per boundary.
+ * The event for an action that changed the editor, if it is worth one. Accepting a rough mark is
+ * logged by the annotation session, which times each visit to a boundary in the check pass.
  */
-export function editEvents(
+export function editEvent(
   action: EditorAction,
   before: EditorState,
   after: EditorState,
-): EditEvent[] {
+): EditEvent | null {
   const was = before.history.present;
   const now = after.history.present;
-  const events: EditEvent[] = [];
   switch (action.type) {
     case 'mark':
-      events.push({
+      return {
         event: 'boundary_set',
         fields: { frame: action.frame, state: action.state, origin: action.origin },
-      });
-      break;
+      };
     case 'move':
       // A drag's every step is not worth an event; its end is.
-      if (action.origin !== 'drag') events.push(...adjusted('filmstrip', was, now));
-      break;
+      return action.origin === 'drag' ? null : adjusted('filmstrip', was, now);
     case 'nudge':
-      events.push(...adjusted('nudge', was, now));
-      break;
+      return adjusted('nudge', was, now);
     case 'move-nearest':
-      events.push(...adjusted('move_here', was, now));
-      break;
+      return adjusted('move_here', was, now);
     case 'drag-end':
-      if (before.history.gestureBase)
-        events.push(...adjusted('drag', before.history.gestureBase, now));
-      break;
+      return before.history.gestureBase && adjusted('drag', before.history.gestureBase, now);
     case 'flip':
-      events.push({ event: 'segment_flipped', fields: { frame: action.frame } });
-      break;
+      return { event: 'segment_flipped', fields: { frame: action.frame } };
     case 'delete-selected':
-      events.push({ event: 'boundary_deleted', fields: { frame: before.selected } });
-      break;
+      return { event: 'boundary_deleted', fields: { frame: before.selected } };
     case 'undo':
     case 'redo':
-      events.push({ event: action.type, fields: {} });
-      break;
+      return { event: action.type, fields: {} };
+    default:
+      return null;
   }
-  // Undo can't check a boundary, and a drag is accepted when it ends.
-  if (action.type !== 'undo' && action.type !== 'redo' && after.history.gestureBase === null) {
-    const base = before.history.gestureBase ?? was;
-    for (const [i, boundary] of now.boundaries.entries()) {
-      const old = base.boundaries[i];
-      if (boundary.checked && old && !old.checked && old.state === boundary.state) {
-        events.push({
-          event: 'boundary_accepted',
-          fields: {
-            frame: boundary.frame,
-            how: action.type === 'confirm' ? 'enter' : boundary.origin,
-          },
-        });
-      }
-    }
-  }
-  return events;
 }
 
-/** `boundary_adjusted` for the boundary whose frame changed, if one did. */
-function adjusted(how: string, was: Timeline, now: Timeline): EditEvent[] {
+/** `boundary_adjusted` for the boundary whose frame changed, if one did (moves keep the order). */
+function adjusted(how: string, was: Timeline, now: Timeline): EditEvent | null {
   const index = was.boundaries.findIndex((b, i) => b.frame !== now.boundaries[i]?.frame);
-  if (index < 0) return [];
+  if (index < 0) return null;
   const fields = { how, from: was.boundaries[index]?.frame, to: now.boundaries[index]?.frame };
-  return [{ event: 'boundary_adjusted', fields }];
+  return { event: 'boundary_adjusted', fields };
 }

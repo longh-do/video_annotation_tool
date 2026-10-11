@@ -50,6 +50,7 @@ export function CameraView({ camera, frames, player, referenceFrames }: CameraVi
         muted
         playsInline
         data-camera={camera.label}
+        aria-label={`${camera.label} camera`}
       />
       <figcaption>
         {camera.label}

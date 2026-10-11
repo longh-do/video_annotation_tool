@@ -1,8 +1,11 @@
 /**
- * Effort per recording: wall time with it open, and active time — the page visible and the
- * annotator either playing the video or using the keyboard or mouse within the last IDLE_MS.
- * A break with the tab left open counts as wall time only. Active time ÷ video length is the
- * real-time factor the operation is measured by.
+ * Effort per recording: wall time with it on screen, and active time — the page visible and the
+ * annotator either playing the video or having used the keyboard or mouse within the last
+ * IDLE_MS. A break with the tab left open counts as wall time only. Active time ÷ video length is
+ * the real-time factor the operation is measured by.
+ *
+ * Each stretch of time is credited with the state it was spent in: every change (visibility,
+ * playback, input) first closes the stretch before it.
  */
 const IDLE_MS = 30_000;
 
@@ -12,32 +15,48 @@ export interface Effort {
 }
 
 export class EffortClock {
-  readonly #isPlaying: () => boolean;
   #activeMs: number;
   #wallMs: number;
-  #lastTick = performance.now();
-  #lastInput = performance.now();
+  #playing = false;
+  #visible: boolean;
+  #since = performance.now();
+  /** Opening the recording counts as input. */
+  #lastInput = this.#since;
 
-  constructor(start: Effort, isPlaying: () => boolean) {
+  constructor(start: Effort, visible: boolean) {
     this.#activeMs = start.activeMs;
     this.#wallMs = start.wallMs;
-    this.#isPlaying = isPlaying;
+    this.#visible = visible;
   }
 
-  /** Call on every key press and pointer event. */
+  /** A key press or a pointer action. */
   noteInput(): void {
-    this.#lastInput = performance.now();
+    this.#advance();
+    this.#lastInput = this.#since;
   }
 
-  /** Adds the time since the last reading and returns the totals. */
+  setPlaying(playing: boolean): void {
+    this.#advance();
+    this.#playing = playing;
+  }
+
+  setVisible(visible: boolean): void {
+    this.#advance();
+    this.#visible = visible;
+  }
+
   read(): Effort {
-    const now = performance.now();
-    const elapsed = now - this.#lastTick;
-    this.#lastTick = now;
-    if (document.visibilityState === 'visible') {
-      this.#wallMs += elapsed;
-      if (this.#isPlaying() || now - this.#lastInput < IDLE_MS) this.#activeMs += elapsed;
-    }
+    this.#advance();
     return { activeMs: this.#activeMs, wallMs: this.#wallMs };
+  }
+
+  #advance(): void {
+    const now = performance.now();
+    const from = this.#since;
+    this.#since = now;
+    if (!this.#visible) return;
+    this.#wallMs += now - from;
+    const activeUntil = this.#playing ? now : Math.min(now, this.#lastInput + IDLE_MS);
+    this.#activeMs += Math.max(activeUntil - from, 0);
   }
 }

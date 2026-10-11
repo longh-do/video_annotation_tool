@@ -100,24 +100,28 @@ export interface StartingPoint {
 }
 
 /**
- * Where to reopen a recording. Changes left in the journal are reopened if they build on the
- * revision the server still has. If the server has moved on, its version wins: either the save
- * landed and only its answer was lost (same content), or another tab saved since.
+ * Where to reopen a recording. Changes left in the journal are reopened if they build on what the
+ * server has: the revision they were made on, or the one after it when that is the save that was
+ * in flight (it landed, but the page died before hearing so). Otherwise the server's version wins:
+ * the journal's content landed too, or another tab saved since.
  */
 export function startingPoint(
   saved: SavedAnnotation | null,
   unsaved: JournalEntry | null,
 ): StartingPoint {
   const revision = saved?.revision ?? 0;
-  if (unsaved?.baseRevision === revision) {
+  const builtOn =
+    unsaved?.baseRevision === revision ||
+    (unsaved?.baseRevision === revision - 1 && sameContent(saved, unsaved.inFlight));
+  if (unsaved && builtOn) {
     return { start: { revision, ...unsaved.payload }, recovered: true, discarded: false };
   }
   const discarded = unsaved !== null && !sameContent(saved, unsaved.payload);
   return { start: saved, recovered: false, discarded };
 }
 
-function sameContent(saved: SavedAnnotation | null, payload: SavePayload): boolean {
-  if (!saved?.sidecar) return false;
+function sameContent(saved: SavedAnnotation | null, payload: SavePayload | null): boolean {
+  if (!saved?.sidecar || !payload) return false;
   const { status, notes, keep_intervals } = saved.annotation;
   const essence = (boundaries: SidecarDraft['boundaries']) =>
     JSON.stringify(boundaries.map((b) => [b.frame, b.state, b.origin, b.checked]));

@@ -15,7 +15,7 @@ import {
 } from 'react';
 import type { Session } from '../core/api-types.ts';
 import { boundariesToCheck } from '../core/check.ts';
-import { stateAt } from '../core/timeline.ts';
+import { keepSegments, stateAt } from '../core/timeline.ts';
 import type { AnnotationSession } from './annotation-session.ts';
 import { type CommandContext, createCommands, createPointerActions } from './commands.ts';
 import { CameraView } from './components/CameraView.tsx';
@@ -40,10 +40,11 @@ import { usePlayer } from './player/use-player.ts';
 import type { LoadedRecording } from './recording.ts';
 import { readResumeFrame, readSetting, writeResumeFrame, writeSetting } from './settings.ts';
 
-/** An outcome was saved: what to tell the annotator, and whether the toast can undo it. */
-export interface Finished {
-  readonly id: string;
+/** An outcome to save, and what to say once it is saved. */
+export interface Outcome {
+  readonly action: EditorAction;
   readonly text: string;
+  /** The toast offers Undo (else Back): only when undo restores what the outcome removed. */
   readonly undo: boolean;
 }
 
@@ -56,16 +57,17 @@ interface WorkspaceProps {
   readonly canMark: boolean;
   /** Where the recording is in the queue, for the top bar. */
   readonly queueBar: ReactNode;
-  /** Something over the screen (the queue) has the keyboard. */
+  /** Keys and edits are off: the queue is open, or an outcome is being handed over. */
   readonly blocked: boolean;
-  readonly onFinished: (finished: Finished) => void;
+  /** Saves the outcome and moves the queue on; keys stay off meanwhile. */
+  readonly onOutcome: (outcome: Outcome) => void;
   readonly onToast: (message: ToastMessage) => void;
 }
 
 type Question = 'keep-to-end' | 'no-task' | 'review';
 
 export function Workspace(props: WorkspaceProps) {
-  const { recording, annotation, session, canMark, blocked, onFinished, onToast } = props;
+  const { recording, annotation, session, canMark, blocked, onOutcome, onToast } = props;
   const { info, frames: cameraFrames } = recording;
   const camera = info.cameras[0]!;
   const frames = cameraFrames[0]!;
@@ -124,10 +126,10 @@ export function Workspace(props: WorkspaceProps) {
   // active time while this screen is open: playing, or keys and pointer in the last 30 s.
   useEffect(() => {
     if (!player) return;
-    const detach = annotation.attach({
-      place: () => ({ frame: Math.max(player.frame, 0), playbackRate: player.snapshot.speed }),
-      playing: () => player.snapshot.playing,
-    });
+    const detach = annotation.attach(() => ({
+      frame: player.frame,
+      playbackRate: player.snapshot.speed,
+    }));
     const active = () => annotation.noteInput();
     window.addEventListener('keydown', active, { capture: true });
     window.addEventListener('pointerdown', active, { capture: true });
@@ -153,11 +155,16 @@ export function Workspace(props: WorkspaceProps) {
       }
       const now = s.around ? AROUND_SPEED : s.skimming ? SKIM_SPEED : s.speed;
       if (s.playing === playing && (now === rate || !s.playing)) return;
+      const action = s.playing === playing ? 'rate' : s.playing ? 'play' : 'pause';
       playing = s.playing;
       rate = now;
-      annotation.notePlayback(playing, rate);
+      annotation.notePlayback(playing, rate, action);
     });
   }, [player, annotation]);
+
+  useEffect(() => {
+    document.title = `${info.id} · Keep/cut annotator`;
+  }, [info.id]);
 
   // Remember the place whenever the video stops, to reopen there.
   useEffect(() => {
@@ -183,15 +190,15 @@ export function Workspace(props: WorkspaceProps) {
     !blocked &&
     asking === null;
 
-  /** Saves an outcome; once it is on the server, the queue moves on. */
-  const finish = async (action: EditorAction, finished: Omit<Finished, 'id'>) => {
+  const finish = (outcome: Outcome) => {
     setAsking(null);
-    if (await annotation.finish(action)) onFinished({ id: info.id, ...finished });
-    else {
-      onToast({ text: 'Not saved yet, so this recording stays open. The save status says why.' });
-    }
+    onOutcome(outcome);
   };
-  const submitted = { text: `Submitted ${info.id}.`, undo: false };
+  const submit = {
+    action: { type: 'submit' },
+    text: `Submitted ${info.id}.`,
+    undo: false,
+  } as const;
 
   // Keys and the mouse share one context. The keymap asks for the handlers at each key press,
   // so the values read here are those of the latest render.
@@ -205,7 +212,8 @@ export function Workspace(props: WorkspaceProps) {
       writeSetting('speed', speed);
     },
     toggleHelp: () => setShowHelp((shown) => !shown),
-    // ⌘↵: rough marks are checked first, and a keep that runs to the end is confirmed.
+    // ⌘↵: rough marks are checked first; nothing kept is "no useful task", which N confirms; a
+    // keep that runs to the end is confirmed too.
     submit: () => {
       const timeline = editor.getState().history.present;
       const rough = boundariesToCheck(timeline);
@@ -215,10 +223,12 @@ export function Workspace(props: WorkspaceProps) {
         onToast({
           text: `${rough.length} rough ${rough.length === 1 ? 'mark' : 'marks'} to check before submitting: Enter accepts each one.`,
         });
+      } else if (keepSegments(timeline).length === 0) {
+        setAsking('no-task');
       } else if (stateAt(timeline, timeline.frameCount - 1) === 'keep') {
         setAsking('keep-to-end');
       } else {
-        void finish({ type: 'submit' }, submitted);
+        finish(submit);
       }
     },
     noTask: () => setAsking('no-task'),
@@ -267,24 +277,25 @@ export function Workspace(props: WorkspaceProps) {
               muted
               playsInline
               data-camera="head"
+              aria-label={`${camera.label} camera, the one annotated`}
             />
             {!canMark && (
-              <p className="banner">
+              <p className="banner" role="alert">
                 Annotation needs Chrome or Edge. You can watch here, not mark.
               </p>
             )}
             {!recording.seekable && (
-              <p className="banner">
+              <p className="banner" role="alert">
                 The media server ignores byte ranges, so seeking can't work. Start it with pnpm dev.
               </p>
             )}
             {seekFailed && (
-              <p className="banner">
+              <p className="banner" role="alert">
                 Couldn't confirm which frame is on screen. Marking is off until a seek succeeds.
               </p>
             )}
             {saver.stopped && (
-              <p className="banner">
+              <p className="banner" role="alert">
                 {saveStatus.kind === 'conflict'
                   ? 'This recording was saved from another tab. Editing is off here so nothing is lost.'
                   : 'The server refused this annotation, so editing is off.'}{' '}
@@ -293,24 +304,28 @@ export function Workspace(props: WorkspaceProps) {
                 </button>
               </p>
             )}
-            {asking === 'keep-to-end' && (
+            {/* A question waits, without listening, while the queue is open. */}
+            {asking === 'keep-to-end' && !blocked && (
               <ConfirmBar
                 message="The last kept interval runs to the end of the video. Submit anyway?"
                 confirmLabel="↵"
                 confirms={(event) => event.key === 'Enter'}
-                onConfirm={() => void finish({ type: 'submit' }, submitted)}
+                onConfirm={() => finish(submit)}
                 onCancel={() => setAsking(null)}
               />
             )}
-            {asking === 'no-task' && (
+            {asking === 'no-task' && !blocked && (
               <ConfirmBar
                 message="No useful task: cut the whole recording and submit it?"
                 confirmLabel="↵"
-                onConfirm={() => {
-                  // The toast can undo it, if there was something to cut.
-                  const undo = editor.getState().history.present.boundaries.length > 0;
-                  void finish({ type: 'no-task' }, { text: `${info.id}: no useful task.`, undo });
-                }}
+                onConfirm={() =>
+                  finish({
+                    action: { type: 'no-task' },
+                    text: `${info.id}: no useful task.`,
+                    // The toast can undo it, if there was something to cut.
+                    undo: editor.getState().history.present.boundaries.length > 0,
+                  })
+                }
                 onCancel={() => setAsking(null)}
               />
             )}
@@ -391,13 +406,14 @@ export function Workspace(props: WorkspaceProps) {
         <KeyLegend onRun={run} />
       </div>
       {showHelp && <HelpOverlay onRun={run} onClose={() => setShowHelp(false)} />}
-      {asking === 'review' && (
+      {asking === 'review' && !blocked && (
         <ReviewDialog
           onSubmit={(reason, notes) =>
-            void finish(
-              { type: 'needs-review', reason, notes },
-              { text: `Sent ${info.id} to review.`, undo: false },
-            )
+            finish({
+              action: { type: 'needs-review', reason, notes },
+              text: `Sent ${info.id} to review.`,
+              undo: false,
+            })
           }
           onCancel={() => setAsking(null)}
         />

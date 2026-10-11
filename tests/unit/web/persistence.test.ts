@@ -79,7 +79,7 @@ describe('saving', () => {
       origin: 'paused',
     });
     const payload = toSavePayload(more, reference, session);
-    const entry = { recordingId: 'rec', baseRevision: 5, payload, writtenAt: 1 };
+    const entry = { recordingId: 'rec', baseRevision: 5, payload, inFlight: null, writtenAt: 1 };
 
     const recovered = startingPoint(saved, entry);
     expect(recovered).toMatchObject({ recovered: true, discarded: false });
@@ -92,7 +92,7 @@ describe('saving', () => {
 
   test('if the server moved on, its version wins; the journal only counts as lost if different', () => {
     const payload = toSavePayload(edited(), reference, session);
-    const entry = { recordingId: 'rec', baseRevision: 5, payload, writtenAt: 1 };
+    const entry = { recordingId: 'rec', baseRevision: 5, payload, inFlight: null, writtenAt: 1 };
     // The save landed but its answer was lost: same content, nothing lost.
     expect(startingPoint(savedAt(6, payload), entry)).toEqual({
       start: savedAt(6, payload),
@@ -106,6 +106,35 @@ describe('saving', () => {
       discarded: true,
     });
     expect(startingPoint(savedAt(6, other), null)).toMatchObject({ discarded: false });
+  });
+
+  test('changes made while a save was in flight reopen on top of that save, once it landed', () => {
+    const first = toSavePayload(edited(), reference, session);
+    const more = editorReducer(edited(), {
+      type: 'mark',
+      frame: 60,
+      state: 'keep',
+      origin: 'paused',
+    });
+    const second = toSavePayload(more, reference, session);
+    const entry = {
+      recordingId: 'rec',
+      baseRevision: 5,
+      payload: second,
+      inFlight: first,
+      writtenAt: 2,
+    };
+    // The first save landed as revision 6, but the page died before the second went out.
+    const recovered = startingPoint(savedAt(6, first), entry);
+    expect(recovered).toMatchObject({ recovered: true, discarded: false });
+    expect(recovered.start?.revision).toBe(6);
+    expect(fromSaved(recovered.start, frames).editor.history.present).toEqual(more.history.present);
+    // Revision 6 holds something else (another tab): the server wins.
+    const other = toSavePayload(createEditor(emptyTimeline(100)), reference, session);
+    expect(startingPoint(savedAt(6, other), entry)).toMatchObject({
+      recovered: false,
+      discarded: true,
+    });
   });
 });
 

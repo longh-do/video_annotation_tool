@@ -35,7 +35,7 @@ function server(...responses: (number | 'offline')[]) {
   return calls;
 }
 
-/** An in-memory journal with the same settle rule as the IndexedDB one; `log` has every state. */
+/** An in-memory journal with the same rules as the IndexedDB one; `log` has every state. */
 function journal() {
   let entry: JournalEntry | null = null;
   const log: (JournalEntry | null)[] = [];
@@ -50,7 +50,11 @@ function journal() {
     },
     settle: async (_id, writtenAt, revision) => {
       if (entry && entry.writtenAt <= writtenAt) entry = null;
-      else if (entry) entry = { ...entry, baseRevision: revision };
+      else if (entry) entry = { ...entry, baseRevision: revision, inFlight: null };
+      log.push(entry);
+    },
+    forget: async (_id, writtenAt) => {
+      if (entry && entry.writtenAt <= writtenAt) entry = null;
       log.push(entry);
     },
   };
@@ -123,7 +127,7 @@ describe('Saver', () => {
   test('every change is journaled at once and forgotten once the server has it', async () => {
     server();
     const unsaved = journal();
-    const saver = new Saver('rec', 4, null, unsaved);
+    const saver = new Saver('rec', 4, unsaved);
     saver.save(payload('edit'));
     expect(unsaved.entry).toMatchObject({ recordingId: 'rec', baseRevision: 4 });
     expect(unsaved.entry?.payload.annotation.notes).toBe('edit');
@@ -134,7 +138,7 @@ describe('Saver', () => {
   test('a change made while a save is in flight stays journaled, on top of the new revision', async () => {
     const calls = server();
     const unsaved = journal();
-    const saver = new Saver('rec', 0, null, unsaved);
+    const saver = new Saver('rec', 0, unsaved);
     saver.save(payload('first'));
     const sending = saver.flush();
     saver.save(payload('second'));
@@ -144,14 +148,24 @@ describe('Saver', () => {
       ['"1"', 'second'],
     ]);
     const notes = (entry: JournalEntry | null) =>
-      entry && [entry.baseRevision, entry.payload.annotation.notes];
-    expect(unsaved.log.map(notes)).toEqual([[0, 'first'], [0, 'second'], [1, 'second'], null]);
+      entry && [
+        entry.baseRevision,
+        entry.payload.annotation.notes,
+        entry.inFlight?.annotation.notes,
+      ];
+    // The second change was written while the first was on its way: the journal says so.
+    expect(unsaved.log.map(notes)).toEqual([
+      [0, 'first', undefined],
+      [0, 'second', 'first'],
+      [1, 'second', undefined],
+      null,
+    ]);
   });
 
   test('offline, the journal keeps the change until a retry gets through', async () => {
     server('offline', 200);
     const unsaved = journal();
-    const saver = new Saver('rec', 0, null, unsaved);
+    const saver = new Saver('rec', 0, unsaved);
     saver.save(payload('x'));
     await vi.advanceTimersByTimeAsync(300);
     expect(unsaved.entry?.payload.annotation.notes).toBe('x');
@@ -176,5 +190,15 @@ describe('Saver', () => {
       await vi.advanceTimersByTimeAsync(200);
     }
     expect(calls.map((c) => c.notes)).toEqual(['edit 9']);
+  });
+
+  test('content the server refuses is dropped from the journal: it would only be refused again', async () => {
+    server(400);
+    const unsaved = journal();
+    const saver = new Saver('rec', 0, unsaved);
+    saver.save(payload('bad'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(saver.status.kind).toBe('rejected');
+    expect(unsaved.entry).toBeNull();
   });
 });

@@ -1,18 +1,19 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import type { AnnotationFile } from '../../src/core/annotation.ts';
+import type { AnnotationFile, Status } from '../../src/core/annotation.ts';
 import { frameNs, parseFramesCsv, stopNs } from '../../src/core/frame-map.ts';
 import { referenceCamera } from '../../src/server/catalog.ts';
 import { ingest } from '../../src/server/ingest.ts';
 import { formatReport, scoreFolders } from '../../src/server/score-report.ts';
 import { tempDir, writeRecording } from './fixtures.ts';
 
-/** Two recordings; gold for both, an annotation for the first only. */
+/** Three recordings with gold: one done by annotator a1, one still a draft, one never opened. */
 async function setUp() {
   const root = await tempDir();
-  await writeRecording(join(root, 'data'), { id: 'rec-a', frames: 100 });
-  await writeRecording(join(root, 'data'), { id: 'rec-b', frames: 100 });
+  for (const id of ['rec-a', 'rec-b', 'rec-c']) {
+    await writeRecording(join(root, 'data'), { id, frames: 100 });
+  }
   const { catalog } = await ingest({
     dataDir: join(root, 'data'),
     outDir: join(root, 'derived'),
@@ -21,31 +22,33 @@ async function setUp() {
   });
   const recording = catalog.recordings.find((r) => r.id === 'rec-a')!;
   const frames = parseFramesCsv(await readFile(referenceCamera(recording).framesPath, 'utf8'));
-  const contract = (id: string, ranges: [number, number][]): AnnotationFile => ({
-    recording_id: id,
-    reference_video: 'videos/head-0000.mp4',
-    status: 'complete',
-    keep_intervals: ranges.map(([start, end]) => ({
-      start_ns: String(frameNs(frames, start)),
-      end_ns: String(stopNs(frames, end)),
-    })),
-    notes: '',
-  });
+  const contract = (id: string, ranges: [number, number][], status: Status = 'complete') =>
+    ({
+      recording_id: id,
+      reference_video: 'videos/head-0000.mp4',
+      status,
+      keep_intervals: ranges.map(([start, end]) => ({
+        start_ns: String(frameNs(frames, start)),
+        end_ns: String(stopNs(frames, end)),
+      })),
+      notes: '',
+    }) satisfies AnnotationFile;
   const gold = join(root, 'gold');
   const test = join(root, 'annotations');
   await mkdir(gold);
   await mkdir(test);
   const write = (dir: string, name: string, value: unknown) =>
     writeFile(join(dir, name), JSON.stringify(value));
-  await write(
-    gold,
-    'rec-a.json',
-    contract('rec-a', [
-      [10, 30],
-      [50, 70],
-    ]),
-  );
-  await write(gold, 'rec-b.json', contract('rec-b', [[5, 9]]));
+  for (const id of ['rec-a', 'rec-b', 'rec-c']) {
+    await write(
+      gold,
+      `${id}.json`,
+      contract(id, [
+        [10, 30],
+        [50, 70],
+      ]),
+    );
+  }
   // Starts 2 frames late and 1 early; the first stop exact, the second 3 frames early.
   await write(
     test,
@@ -56,23 +59,31 @@ async function setUp() {
     ]),
   );
   await write(test, 'rec-a.meta.json', {
+    annotator_id: 'a1',
     effort: { active_ms: recording.durationS * 700, wall_ms: 0, edits: 4, undos: 1 },
   });
+  await write(test, 'rec-b.json', contract('rec-b', [[10, 20]], 'not_reviewed'));
   const telemetry = join(root, 'events.jsonl');
-  const accepted = (checkMs: number) =>
-    JSON.stringify({ event: 'boundary_accepted', recording_id: 'rec-a', check_ms: checkMs });
-  await writeFile(
-    telemetry,
-    [accepted(2000), accepted(4000), '{"event":"playback"}', ''].join('\n'),
-  );
+  const accepted = (annotator: string, checkMs: number) =>
+    JSON.stringify({
+      event: 'boundary_accepted',
+      recording_id: 'rec-a',
+      annotator_id: annotator,
+      check_ms: checkMs,
+    });
+  const lines = [accepted('a1', 2000), accepted('a1', 4000), accepted('lead', 9000)];
+  await writeFile(telemetry, [...lines, '{"event":"playback"}', '{"event":"bound', ''].join('\n'));
   return { catalog, gold, test, telemetry };
 }
 
 describe('score report', () => {
-  test('compares every annotation that has gold, with its effort', async () => {
+  test('scores completed annotations with gold, with the effort of whoever saved them', async () => {
     const { catalog, gold, test: annotations, telemetry } = await setUp();
     const report = await scoreFolders(gold, annotations, catalog, telemetry);
-    expect(report.skipped).toEqual(['rec-b']);
+    expect(report.skipped).toEqual([
+      { id: 'rec-b', reason: 'not reviewed' },
+      { id: 'rec-c', reason: 'no annotation' },
+    ]);
     const [a] = report.recordings;
     expect(a?.score).toMatchObject({
       goldIntervals: 2,
@@ -82,13 +93,16 @@ describe('score report', () => {
       missed: 0,
       extra: 0,
     });
-    expect(a?.realTimeFactor).toBeCloseTo(0.7);
-    expect(a?.checkSeconds).toMatchObject({ count: 2, medianAbs: 2 });
-    expect(report.starts.count).toBe(2);
+    expect(report.realTimeFactor).toBeCloseTo(0.7);
+    // The lead's 9 s check of the same recording is not this annotator's.
+    expect(a?.checkSeconds).toEqual({ count: 2, median: 2, p90: 4 });
+    expect(report.checkSeconds).toEqual({ count: 2, median: 2, p90: 4 });
+    expect(report.badTelemetryLines).toBe(1);
 
     const table = formatReport(report);
-    expect(table).toContain('rec-a');
-    expect(table).toContain('No gold or no annotation to compare: rec-b');
+    expect(table).toContain('2.0 / 4.0 (2)');
+    expect(table).toContain('Not scored: rec-b (not reviewed)');
+    expect(table).toContain("Telemetry lines that couldn't be read: 1");
   });
 
   test('works without telemetry', async () => {

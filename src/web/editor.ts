@@ -149,7 +149,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       return edit(state, markChecked(present, action.index), selection);
     }
     case 'select':
-      return action.frame === state.selected ? state : { ...state, ...selecting(action.frame) };
+      // Even if it is selected already: landing on a boundary starts work on it afresh.
+      return { ...state, ...selecting(action.frame) };
     case 'undo':
     case 'redo': {
       const history = (action.type === 'undo' ? undo : redo)(state.history);

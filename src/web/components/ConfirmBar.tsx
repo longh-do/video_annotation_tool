@@ -20,6 +20,8 @@ export function ConfirmBar({
 }: ConfirmBarProps) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // A held key is not an answer: holding ⌘↵ must not confirm what it just asked.
+      if (event.repeat) return;
       const isConfirm = confirms
         ? confirms(event)
         : event.key === 'Enter' && !event.metaKey && !event.ctrlKey;

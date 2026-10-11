@@ -14,6 +14,12 @@ export interface JournalEntry {
   /** The server revision these edits were made on top of. */
   readonly baseRevision: number;
   readonly payload: SavePayload;
+  /**
+   * The save that was on its way to the server when this entry was written, if any. If it
+   * landed but the page died before hearing so, the server is one revision ahead with exactly
+   * this content, and the entry still applies on top of it.
+   */
+  readonly inFlight: SavePayload | null;
   /** When it was written (ms since the epoch); also tells entries apart. */
   readonly writtenAt: number;
 }
@@ -26,6 +32,8 @@ export interface UnsavedChanges {
    * change was written meanwhile, record that the newer one now builds on `revision`. Atomic.
    */
   settle(recordingId: string, writtenAt: number, revision: number): Promise<void>;
+  /** Drops the entry written at `writtenAt` (unless a newer one replaced it): it can't be saved. */
+  forget(recordingId: string, writtenAt: number): Promise<void>;
 }
 
 const DATABASE = 'annotation-journal';
@@ -71,7 +79,17 @@ export class Journal implements UnsavedChanges {
       const entry = get.result as JournalEntry | undefined;
       if (!entry) return;
       if (entry.writtenAt <= writtenAt) store.delete(recordingId);
-      else store.put({ ...entry, baseRevision: revision });
+      else store.put({ ...entry, baseRevision: revision, inFlight: null });
+    };
+    return done;
+  }
+
+  forget(recordingId: string, writtenAt: number): Promise<void> {
+    const { store, done } = this.#transaction('readwrite');
+    const get = store.get(recordingId);
+    get.onsuccess = () => {
+      const entry = get.result as JournalEntry | undefined;
+      if (entry && entry.writtenAt <= writtenAt) store.delete(recordingId);
     };
     return done;
   }

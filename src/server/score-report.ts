@@ -1,12 +1,13 @@
 /**
- * A scoring report: every annotation that has a gold counterpart, compared boundary by boundary,
- * with the effort it took. The numbers come from src/core/score.ts; this module only finds the
- * files and adds them up.
+ * A scoring report: every completed annotation that has a gold counterpart, compared boundary by
+ * boundary, with the effort it took. The numbers come from src/core/score.ts; this module only
+ * finds the files and adds them up.
  *
  * Speed is the real-time factor (active time ÷ video length, from each sidecar) and the seconds
- * spent per checked boundary (from telemetry). Accuracy is boundary error in frames and interval
- * mistakes. They are reported side by side, never blended: accuracy is a floor, speed is what to
- * improve above it.
+ * spent per checked boundary (from the telemetry of the annotator who saved the file). Accuracy is
+ * boundary error in frames and interval mistakes. They are reported side by side, never blended:
+ * accuracy is a floor, speed is what to improve above it. Drafts and recordings sent to review
+ * are not scored: only accepted work counts.
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -21,22 +22,35 @@ import {
 } from '../core/score.ts';
 import { type Catalog, referenceCamera } from './catalog.ts';
 
+export interface DurationSummary {
+  readonly count: number;
+  /** Nearest-rank percentiles, in seconds. */
+  readonly median: number;
+  readonly p90: number;
+}
+
 export interface RecordingScore {
   readonly id: string;
   readonly score: Score;
   readonly starts: ErrorSummary;
   readonly ends: ErrorSummary;
-  /** Active time ÷ video length; null without a sidecar. */
-  readonly realTimeFactor: number | null;
-  readonly checkSeconds: ErrorSummary | null;
+  readonly durationS: number;
+  /** Active time in seconds, from the sidecar; null without one. */
+  readonly activeS: number | null;
+  readonly checkSeconds: DurationSummary | null;
 }
 
 export interface Report {
   readonly recordings: readonly RecordingScore[];
   readonly starts: ErrorSummary;
   readonly ends: ErrorSummary;
-  /** Recordings in the catalog with no gold or no annotation to compare. */
-  readonly skipped: readonly string[];
+  /** Active time ÷ video length over every scored recording with effort; null if none. */
+  readonly realTimeFactor: number | null;
+  readonly checkSeconds: DurationSummary | null;
+  /** Recordings left out, and why. */
+  readonly skipped: readonly { readonly id: string; readonly reason: string }[];
+  /** Telemetry lines that couldn't be read. */
+  readonly badTelemetryLines: number;
 }
 
 export async function scoreFolders(
@@ -45,14 +59,19 @@ export async function scoreFolders(
   catalog: Catalog,
   telemetryPath: string | null,
 ): Promise<Report> {
-  const checks = telemetryPath ? await checkDurations(telemetryPath) : new Map<string, number[]>();
+  const telemetry = telemetryPath ? await readChecks(telemetryPath) : { checks: [], bad: 0 };
   const recordings: RecordingScore[] = [];
-  const skipped: string[] = [];
+  const skipped: { id: string; reason: string }[] = [];
+  const allChecks: number[] = [];
   for (const recording of catalog.recordings) {
     const gold = await readJson<AnnotationFile>(join(goldDir, `${recording.id}.json`));
     const test = await readJson<AnnotationFile>(join(testDir, `${recording.id}.json`));
     if (!gold || !test) {
-      skipped.push(recording.id);
+      skipped.push({ id: recording.id, reason: gold ? 'no annotation' : 'no gold' });
+      continue;
+    }
+    if (test.status !== 'complete') {
+      skipped.push({ id: recording.id, reason: test.status.replace('_', ' ') });
       continue;
     }
     const frames = parseFramesCsv(await readFile(referenceCamera(recording).framesPath, 'utf8'));
@@ -62,49 +81,91 @@ export async function scoreFolders(
       frames,
     );
     const sidecar = await readJson<Sidecar>(join(testDir, `${recording.id}.meta.json`));
-    const durations = checks.get(recording.id);
+    // Only the checks of whoever saved this annotation.
+    const checks = telemetry.checks
+      .filter((c) => c.recordingId === recording.id && c.annotatorId === sidecar?.annotator_id)
+      .map((c) => c.seconds);
+    allChecks.push(...checks);
     recordings.push({
       id: recording.id,
       score,
       starts: summarizeErrors(score.startErrors),
       ends: summarizeErrors(score.endErrors),
-      realTimeFactor: sidecar ? sidecar.effort.active_ms / 1000 / recording.durationS : null,
-      checkSeconds: durations ? summarizeErrors(durations) : null,
+      durationS: recording.durationS,
+      activeS: sidecar ? sidecar.effort.active_ms / 1000 : null,
+      checkSeconds: summarizeDurations(checks),
     });
   }
+  const timed = recordings.filter((r) => r.activeS !== null);
+  const activeS = timed.reduce((total, r) => total + (r.activeS ?? 0), 0);
+  const durationS = timed.reduce((total, r) => total + r.durationS, 0);
   return {
     recordings,
     starts: summarizeErrors(recordings.flatMap((r) => r.score.startErrors)),
     ends: summarizeErrors(recordings.flatMap((r) => r.score.endErrors)),
+    realTimeFactor: durationS > 0 ? activeS / durationS : null,
+    checkSeconds: summarizeDurations(allChecks),
     skipped,
+    badTelemetryLines: telemetry.bad,
   };
 }
 
-/** Seconds from landing on a rough mark to accepting it, per recording, from telemetry. */
-async function checkDurations(path: string): Promise<Map<string, number[]>> {
-  const durations = new Map<string, number[]>();
+interface Check {
+  readonly recordingId: string;
+  readonly annotatorId: string;
+  readonly seconds: number;
+}
+
+/** Each accepted rough mark's check time, from telemetry; lines that don't parse are counted. */
+async function readChecks(path: string): Promise<{ checks: Check[]; bad: number }> {
   const text = await readFile(path, 'utf8').catch(() => '');
+  const checks: Check[] = [];
+  let bad = 0;
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
-    const event = JSON.parse(line) as { event?: string; recording_id?: string; check_ms?: number };
-    if (
-      event.event !== 'boundary_accepted' ||
-      typeof event.check_ms !== 'number' ||
-      !event.recording_id
-    )
+    let event: {
+      event?: unknown;
+      recording_id?: unknown;
+      annotator_id?: unknown;
+      check_ms?: unknown;
+    };
+    try {
+      event = JSON.parse(line);
+    } catch {
+      bad++;
       continue;
-    durations.set(event.recording_id, [
-      ...(durations.get(event.recording_id) ?? []),
-      event.check_ms / 1000,
-    ]);
+    }
+    const { recording_id, annotator_id, check_ms } = event;
+    if (
+      event.event === 'boundary_accepted' &&
+      typeof recording_id === 'string' &&
+      typeof annotator_id === 'string' &&
+      typeof check_ms === 'number'
+    ) {
+      checks.push({
+        recordingId: recording_id,
+        annotatorId: annotator_id,
+        seconds: check_ms / 1000,
+      });
+    }
   }
-  return durations;
+  return { checks, bad };
+}
+
+function summarizeDurations(seconds: readonly number[]): DurationSummary | null {
+  if (seconds.length === 0) return null;
+  const sorted = seconds.toSorted((a, b) => a - b);
+  const rank = (p: number) => sorted[Math.max(Math.ceil(p * sorted.length) - 1, 0)] ?? 0;
+  return { count: sorted.length, median: rank(0.5), p90: rank(0.9) };
 }
 
 /** The report as a table for the terminal. */
 export function formatReport(report: Report): string {
   const errors = (s: ErrorSummary) =>
     s.count === 0 ? '–' : `${s.medianAbs} / ${s.p90Abs} (${signed(s.meanSigned)})`;
+  const checks = (s: DurationSummary | null) =>
+    s ? `${s.median.toFixed(1)} / ${s.p90.toFixed(1)} (${s.count})` : '–';
+  const factor = (value: number | null) => (value === null ? '–' : value.toFixed(2));
   const rows = report.recordings.map((r) => [
     r.id,
     `${r.score.goldIntervals} / ${r.score.testIntervals}`,
@@ -112,8 +173,8 @@ export function formatReport(report: Report): string {
     errors(r.ends),
     `${r.score.missed} / ${r.score.extra} / ${r.score.merged} / ${r.score.split}`,
     `${r.score.falseKeepSeconds.toFixed(1)} / ${r.score.falseCutSeconds.toFixed(1)}`,
-    r.realTimeFactor === null ? '–' : r.realTimeFactor.toFixed(2),
-    r.checkSeconds ? r.checkSeconds.medianAbs.toFixed(1) : '–',
+    factor(r.activeS === null ? null : r.activeS / r.durationS),
+    checks(r.checkSeconds),
   ]);
   const header = [
     'recording',
@@ -123,9 +184,18 @@ export function formatReport(report: Report): string {
     'missed / extra / merged / split',
     'kept / cut wrongly, s',
     'real-time factor',
-    's per check',
+    's per check: median / p90 (n)',
   ];
-  const total = ['all', '', errors(report.starts), errors(report.ends), '', '', '', ''];
+  const total = [
+    'all',
+    '',
+    errors(report.starts),
+    errors(report.ends),
+    '',
+    '',
+    factor(report.realTimeFactor),
+    checks(report.checkSeconds),
+  ];
   const table = [header, ...rows, total];
   const widths = header.map((_, column) =>
     Math.max(...table.map((row) => (row[column] ?? '').length)),
@@ -133,11 +203,13 @@ export function formatReport(report: Report): string {
   const lines = table.map((row) =>
     row.map((cell, column) => cell.padEnd(widths[column] ?? 0)).join('  '),
   );
-  const skipped =
-    report.skipped.length > 0
-      ? `\nNo gold or no annotation to compare: ${report.skipped.join(', ')}`
-      : '';
-  return `${lines.join('\n')}${skipped}\n`;
+  const notes = [
+    ...report.skipped.map(({ id, reason }) => `Not scored: ${id} (${reason})`),
+    ...(report.badTelemetryLines > 0
+      ? [`Telemetry lines that couldn't be read: ${report.badTelemetryLines}`]
+      : []),
+  ];
+  return `${[...lines, ...(notes.length > 0 ? ['', ...notes] : [])].join('\n')}\n`;
 }
 
 function signed(value: number): string {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { emptyTimeline } from '../../../src/core/timeline.ts';
-import { editEvents } from '../../../src/web/edit-events.ts';
+import { editEvent } from '../../../src/web/edit-events.ts';
 import {
   createEditor,
   type EditorAction,
@@ -8,12 +8,13 @@ import {
   editorReducer,
 } from '../../../src/web/editor.ts';
 
-/** Runs the actions and collects the events each one yields. */
+/** Runs the actions and collects the events they yield. */
 function events(actions: EditorAction[], start: EditorState = createEditor(emptyTimeline(200))) {
   const log: { event: string; fields: Readonly<Record<string, unknown>> }[] = [];
   actions.reduce((state, action) => {
     const next = editorReducer(state, action);
-    if (next !== state) log.push(...editEvents(action, state, next));
+    const event = next === state ? null : editEvent(action, state, next);
+    if (event) log.push(event);
     return next;
   }, start);
   return log;
@@ -32,28 +33,21 @@ describe('edit events', () => {
     ).toEqual(['boundary_set', 'segment_flipped', 'undo', 'redo', 'boundary_deleted']);
   });
 
-  test('checking a rough mark is one acceptance, by Enter or by moving it', () => {
-    const marked: EditorAction[] = [
-      { type: 'mark', frame: 40, state: 'keep', origin: 'live' },
-      { type: 'mark', frame: 90, state: 'cut', origin: 'live' },
-    ];
-    expect(events([...marked, { type: 'confirm', index: 0 }]).slice(2)).toEqual([
-      { event: 'boundary_accepted', fields: { frame: 40, how: 'enter' } },
-    ]);
-    expect(events([...marked, { type: 'nudge', delta: -2, now: 0 }]).slice(2)).toEqual([
-      { event: 'boundary_adjusted', fields: { how: 'nudge', from: 90, to: 88 } },
-      { event: 'boundary_accepted', fields: { frame: 88, how: 'nudge' } },
-    ]);
-    // A second nudge moves an already checked boundary: no second acceptance.
+  test('moves are logged with how they were made; nothing is guessed from list positions', () => {
     expect(
       events([
-        ...marked,
-        { type: 'nudge', delta: -1, now: 0 },
-        { type: 'nudge', delta: -1, now: 900 },
-      ])
-        .slice(2)
-        .map((e) => e.event),
-    ).toEqual(['boundary_adjusted', 'boundary_accepted', 'boundary_adjusted']);
+        { type: 'mark', frame: 100, state: 'keep', origin: 'live' },
+        { type: 'mark', frame: 50, state: 'keep', origin: 'paused' }, // inserted before it
+        { type: 'nudge', delta: -2, now: 0 },
+        { type: 'move-nearest', frame: 120, origin: 'placed' },
+        { type: 'confirm', index: 1 },
+      ]).map((e) => [e.event, e.fields]),
+    ).toEqual([
+      ['boundary_set', { frame: 100, state: 'keep', origin: 'live' }],
+      ['boundary_set', { frame: 50, state: 'keep', origin: 'paused' }],
+      ['boundary_adjusted', { how: 'nudge', from: 50, to: 48 }],
+      ['boundary_adjusted', { how: 'move_here', from: 100, to: 120 }],
+    ]);
   });
 
   test('a drag is logged once, when it ends, with where it started', () => {
@@ -66,7 +60,6 @@ describe('edit events', () => {
     ]);
     expect(log.slice(1)).toEqual([
       { event: 'boundary_adjusted', fields: { how: 'drag', from: 40, to: 50 } },
-      { event: 'boundary_accepted', fields: { frame: 50, how: 'drag' } },
     ]);
   });
 

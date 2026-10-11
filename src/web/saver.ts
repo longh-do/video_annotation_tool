@@ -8,7 +8,7 @@ import { ApiError, saveAnnotation } from './api.ts';
 import type { UnsavedChanges } from './journal.ts';
 
 export type SaveStatus =
-  | { readonly kind: 'saved'; readonly at: number | null }
+  | { readonly kind: 'saved' }
   | { readonly kind: 'saving' }
   /** The server can't be reached; the change is kept and retried. */
   | { readonly kind: 'offline' }
@@ -23,6 +23,12 @@ const SAVE_DELAY_MS = 300;
 const MAX_SAVE_DELAY_MS = 2000;
 const MAX_RETRY_MS = 10_000;
 
+interface Change {
+  readonly payload: SavePayload;
+  /** When it was written to the journal. */
+  readonly writtenAt: number;
+}
+
 export class Saver {
   readonly #recordingId: string;
   readonly #journal: UnsavedChanges | null;
@@ -30,7 +36,9 @@ export class Saver {
   #revision: number;
   #status: SaveStatus;
   /** The newest change not sent yet, and when it was written to the journal. */
-  #pending: { readonly payload: SavePayload; readonly writtenAt: number } | null = null;
+  #pending: Change | null = null;
+  /** The change on its way to the server. */
+  #sending: Change | null = null;
   /** When the oldest change not sent yet was made. */
   #pendingSince: number | null = null;
   #lastWrittenAt = 0;
@@ -38,15 +46,10 @@ export class Saver {
   #running: Promise<void> | null = null;
   #retryMs = 1000;
 
-  constructor(
-    recordingId: string,
-    revision: number,
-    savedAt: number | null,
-    journal: UnsavedChanges | null = null,
-  ) {
+  constructor(recordingId: string, revision: number, journal: UnsavedChanges | null = null) {
     this.#recordingId = recordingId;
     this.#revision = revision;
-    this.#status = { kind: 'saved', at: savedAt };
+    this.#status = { kind: 'saved' };
     this.#journal = journal;
   }
 
@@ -88,6 +91,7 @@ export class Saver {
       recordingId: this.#recordingId,
       baseRevision: this.#revision,
       payload,
+      inFlight: this.#sending?.payload ?? null,
       writtenAt,
     };
     this.#journal?.write(entry).catch(() => {});
@@ -121,18 +125,22 @@ export class Saver {
       const sending = this.#pending;
       this.#pending = null;
       this.#pendingSince = null;
+      this.#sending = sending;
       this.#setStatus({ kind: 'saving' });
       try {
+        const id = this.#recordingId;
         this.#revision = (
-          await saveAnnotation(this.#recordingId, this.#revision, sending.payload, keepalive)
+          await saveAnnotation(id, this.#revision, sending.payload, keepalive)
         ).revision;
-        this.#journal?.settle(this.#recordingId, sending.writtenAt, this.#revision).catch(() => {});
+        this.#journal?.settle(id, sending.writtenAt, this.#revision).catch(() => {});
         this.#retryMs = 1000;
-        this.#setStatus({ kind: 'saved', at: Date.now() });
+        this.#setStatus({ kind: 'saved' });
       } catch (error) {
-        if (error instanceof ApiError && error.status === 412)
+        if (error instanceof ApiError && error.status === 412) {
           this.#setStatus({ kind: 'conflict' });
-        else if (error instanceof ApiError && error.status === 400) {
+        } else if (error instanceof ApiError && error.status === 400) {
+          // Refused content would be refused again after every reload: drop it from the journal.
+          this.#journal?.forget(this.#recordingId, sending.writtenAt).catch(() => {});
           this.#setStatus({ kind: 'rejected', problems: error.body.problems ?? [error.message] });
         } else {
           this.#pending ??= sending;
@@ -142,6 +150,8 @@ export class Saver {
           this.#retryMs = Math.min(this.#retryMs * 2, MAX_RETRY_MS);
           return;
         }
+      } finally {
+        this.#sending = null;
       }
     }
   }

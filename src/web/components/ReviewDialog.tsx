@@ -53,8 +53,11 @@ export function ReviewDialog({ onSubmit, onCancel }: ReviewDialogProps) {
         aria-label="Needs review"
         tabIndex={-1}
         onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          // Enter on a button presses that button; it sends only from the dialog or the note.
+          const sends = event.target === dialog.current || event.target === input.current;
           if (event.key === 'Escape') onCancel();
-          else if (event.key === 'Enter') submit();
+          else if (event.key === 'Enter' && sends) submit();
           else if (event.target !== input.current && /^[1-4]$/.test(event.key)) {
             const option = REVIEW_REASONS[Number(event.key) - 1];
             if (option) choose(option.reason);

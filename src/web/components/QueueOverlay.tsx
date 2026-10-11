@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { QueueItem } from '../../core/api-types.ts';
 import { clock } from '../format.ts';
 
@@ -17,6 +17,8 @@ const STATUS: Record<QueueItem['status'], string> = {
 
 /** Every recording in the batch, to go back to one or pick another. Escape closes. */
 export function QueueOverlay({ recordings, current, onOpen, onClose }: QueueOverlayProps) {
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => dialog.current?.focus(), []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -29,7 +31,14 @@ export function QueueOverlay({ recordings, current, onOpen, onClose }: QueueOver
 
   return (
     <div className="overlay">
-      <div className="dialog queue" role="dialog" aria-modal="true" aria-label="Queue">
+      <div
+        ref={dialog}
+        className="dialog queue"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Queue"
+        tabIndex={-1}
+      >
         <h2>Queue</h2>
         <ol>
           {recordings.map((recording) => (

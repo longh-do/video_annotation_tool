@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { BINDINGS, type Command, chordLabel, type Group } from '../keymap.ts';
 
 /** The keys a new annotator needs on day one; everything else is under H. */
@@ -50,6 +50,9 @@ interface HelpOverlayProps {
 
 /** Every key, grouped, from the same table that drives the keyboard. H or Escape closes it. */
 export function HelpOverlay({ onRun, onClose }: HelpOverlayProps) {
+  const dialog = useRef<HTMLDivElement>(null);
+  // Tab moves among the keys listed here.
+  useEffect(() => dialog.current?.focus(), []);
   // H is a keymap command (it toggles); Escape is handled here.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -64,7 +67,14 @@ export function HelpOverlay({ onRun, onClose }: HelpOverlayProps) {
 
   return (
     <div className="overlay">
-      <div className="help" role="dialog" aria-modal="true" aria-label="All keys">
+      <div
+        ref={dialog}
+        className="help"
+        role="dialog"
+        aria-modal="true"
+        aria-label="All keys"
+        tabIndex={-1}
+      >
         {GROUPS.map((group) => (
           <section key={group}>
             <h2>{group}</h2>

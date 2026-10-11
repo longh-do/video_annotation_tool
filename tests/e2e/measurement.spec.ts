@@ -31,7 +31,7 @@ test('marking, checking and submitting are logged; the score report measures the
   await page.goto(`/#${recording.id}/0`);
   await expect(page.locator('.time[data-frame="0"]')).toBeVisible();
 
-  // Mark live at 2×, check both rough marks (one nudged), submit.
+  // Mark live at 2×, check both rough marks (the first nudged), submit.
   await page.keyboard.press('Space');
   await page.waitForTimeout(700);
   await page.keyboard.press('s');
@@ -39,11 +39,19 @@ test('marking, checking and submitting are logged; the score report measures the
   await page.keyboard.press('d');
   await page.waitForTimeout(200);
   await page.keyboard.press('Space');
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(300);
+  await page.waitForFunction(() => document.querySelector('video')?.paused);
+  await expect
+    .poll(async () => (await savedAnnotation(request, recording.id))?.sidecar?.boundaries.length)
+    .toBe(2);
+  const [start, end] = (await savedAnnotation(request, recording.id))!.sidecar!.boundaries;
+  await page.keyboard.press('Enter'); // lands on the first rough mark
+  await expect(page.locator(`.time[data-frame="${start!.frame}"]`)).toBeVisible();
+  await page.waitForTimeout(400);
   await page.keyboard.press('Comma');
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(400);
+  await page.keyboard.press('Enter'); // accepts it, lands on the second
+  await expect(page.locator(`.time[data-frame="${end!.frame}"]`)).toBeVisible();
+  await page.waitForTimeout(400);
   await page.keyboard.press('Enter');
   await expect(page.locator('.check-status')).toContainText('Every boundary is checked');
   await page.keyboard.press('ControlOrMeta+Enter');
@@ -64,14 +72,23 @@ test('marking, checking and submitting are logged; the score report measures the
   ]) {
     expect(names).toContain(name);
   }
+  // Each check is timed from landing on the mark to the Enter that leaves it.
   const accepted = log.filter((e) => e.event === 'boundary_accepted');
-  expect(accepted).toHaveLength(2);
-  expect(accepted.every((e) => typeof e.check_ms === 'number' && e.check_ms > 0)).toBe(true);
+  expect(accepted.map((e) => [e.frame, e.how])).toEqual([
+    [start!.frame, 'nudge'],
+    [end!.frame, 'enter'],
+  ]);
+  for (const { check_ms } of accepted) {
+    expect(check_ms).toBeGreaterThanOrEqual(350);
+    expect(check_ms).toBeLessThan(3000);
+  }
   const submitted = log.find((e) => e.event === 'task_submitted')!;
   expect(submitted).toMatchObject({ status: 'complete', n_intervals: 1, max_rate: 2 });
   expect(typeof submitted.keep_ns_total).toBe('string');
   expect(submitted.active_ms).toBeGreaterThan(0);
-  for (const event of log) expect(typeof event.media_pos_ns).toBe('string');
+  // A position once a frame is on screen; none before (the recording just opened).
+  const ready = names.indexOf('media_ready');
+  for (const event of log.slice(ready)) expect(typeof event.media_pos_ns).toBe('string');
 
   // Gold: the same interval, starting 3 frames earlier and ending 2 frames later.
   const saved = (await savedAnnotation(request, recording.id))!;
@@ -95,6 +112,7 @@ test('marking, checking and submitting are logged; the score report measures the
   const row = report.recordings.find((r) => r.id === recording.id)!;
   expect(row.score).toMatchObject({ startErrors: [3], endErrors: [-2], missed: 0, extra: 0 });
   expect(row.checkSeconds?.count).toBe(2);
-  expect(row.realTimeFactor).toBeGreaterThan(0);
+  expect(row.activeS).toBeGreaterThan(0);
+  expect(report.realTimeFactor).toBeGreaterThan(0);
   expect(formatReport(report)).toContain('s per check');
 });

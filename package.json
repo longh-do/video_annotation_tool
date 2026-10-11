@@ -11,6 +11,8 @@
   "scripts": {
     "ingest": "node scripts/ingest.ts",
     "score": "node scripts/score.ts",
+    "perf": "node scripts/perf.ts",
+    "demo": "node scripts/demo.ts",
     "dev": "node src/server/main.ts --dev",
     "build": "vite build",
     "start": "node src/server/main.ts",
