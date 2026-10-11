@@ -8,16 +8,14 @@
  *
  * Needs the real recordings ingested; annotations go to a temporary folder, not the real ones.
  */
-import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import { chromium } from '@playwright/test';
+import { type Browser, chromium } from '@playwright/test';
 import { keepIntervals, sidecarBoundaries } from '../src/core/annotation.ts';
 import { frameCount, parseFramesCsv } from '../src/core/frame-map.ts';
 import type { Boundary, Timeline } from '../src/core/timeline.ts';
 import { readCatalog, referenceCamera } from '../src/server/catalog.ts';
+import { startServer } from './local-server.ts';
 
 const { values } = parseArgs({
   options: {
@@ -27,7 +25,6 @@ const { values } = parseArgs({
   },
 });
 const PORT = 5179;
-const BASE = `http://127.0.0.1:${PORT}`;
 /** One frame at 60 Hz, with a little slack. */
 const FRAME_BUDGET_MS = 17.5;
 /** A bare <video> drops well under 1% at 2×; the page's own drawing must not add to that. */
@@ -50,18 +47,10 @@ const boundaries: Boundary[] = Array.from({ length: n }, (_, i) => ({
 }));
 const timeline: Timeline = { frameCount: count, boundaries };
 
-const work = await mkdtemp(join(tmpdir(), 'annotator-perf-'));
-const server = spawn(
-  process.execPath,
-  [
-    ...[resolve('src/server/main.ts'), '--port', String(PORT), '--catalog', values.catalog],
-    ...['--annotations', join(work, 'annotations'), '--telemetry', join(work, 'events.jsonl')],
-  ],
-  { stdio: ['ignore', 'ignore', 'inherit'] },
-);
-const browser = await chromium.launch({ channel: 'chrome' });
+const server = await startServer(PORT, values.catalog);
+const BASE = server.url;
+let browser: Browser | null = null;
 try {
-  await waitForServer();
   const saved = await fetch(`${BASE}/api/annotations/${encodeURIComponent(recording.id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'If-Match': '"0"' },
@@ -85,6 +74,7 @@ try {
   });
   if (!saved.ok) throw new Error(`seeding the annotation failed: HTTP ${saved.status}`);
 
+  browser = await chromium.launch({ channel: 'chrome' });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const start = Math.round(count * 0.3);
   await page.goto(`${BASE}/#${encodeURIComponent(recording.id)}/${start}`);
@@ -159,19 +149,6 @@ try {
   if (smooth && videoKeptUp) console.log('PASS: the page draws at 60 fps and the video keeps up');
   process.exitCode = smooth && videoKeptUp ? 0 : 1;
 } finally {
-  await browser.close();
-  server.kill();
-  await rm(work, { recursive: true, force: true });
-}
-
-async function waitForServer(): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const up = await fetch(`${BASE}/api/queue`).then(
-      (r) => r.ok,
-      () => false,
-    );
-    if (up) return;
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error('the server did not start');
+  await browser?.close();
+  await server.stop();
 }

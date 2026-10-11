@@ -11,7 +11,7 @@ import { nextToAnnotate } from './queue.ts';
 import { prefetchMedia } from './recording.ts';
 import { type Opened, Sessions } from './sessions.ts';
 import { Telemetry } from './telemetry.ts';
-import { type Outcome, Workspace } from './Workspace.tsx';
+import { type Decision, Workspace } from './Workspace.tsx';
 
 /**
  * The queue. Opens the recording the URL names (#<id> or #<id>/<frame>), else the first one not
@@ -29,30 +29,39 @@ export function App() {
   const [warm, setWarm] = useState<{ id: string; videoUrl: string } | null>(null);
   const canMark = useMemo(canAnnotate, []);
   const sessions = useRef<Sessions | null>(null);
+  /** The recording asked for last: an older open that finishes later is dropped. */
   const latest = useRef<string | null>(null);
+  /** Counts hand-overs, so that a superseded one doesn't turn the keys back on for a newer one. */
+  const handOvers = useRef(0);
 
-  /** Opens a recording; true once it is on screen. A failure is told, and the screen stays. */
-  const open = useCallback(async (id: string): Promise<boolean> => {
+  /**
+   * Opens a recording. A failure is told and the screen stays as it was; `replaced` means a
+   * newer open (a link, Back on a toast) came first.
+   */
+  const open = useCallback(async (id: string): Promise<'opened' | 'replaced' | 'failed'> => {
     latest.current = id;
     try {
       const loaded = await sessions.current!.open(id);
-      if (latest.current !== id) return false;
+      if (latest.current !== id) return 'replaced';
       if (placeFromHash().recordingId !== id) {
         history.replaceState(null, '', `#${encodeURIComponent(id)}`);
       }
       setOpened(loaded);
       setShowQueue(false);
+      // Whatever was being handed over, the screen now shows a recording to work on.
+      setHandingOver(false);
       if (loaded.fresh && loaded.annotation.recovered) {
         setToast({ text: 'Recovered changes that had not been saved.' });
       } else if (loaded.fresh && loaded.annotation.discarded) {
         setToast({ text: 'Older unsaved changes were dropped: this recording was saved since.' });
       }
-      return true;
+      return 'opened';
     } catch (reason) {
+      if (latest.current !== id) return 'replaced';
       setToast({
         text: `Couldn't open ${id}: ${reason instanceof Error ? reason.message : reason}`,
       });
-      return false;
+      return 'failed';
     }
   }, []);
   const go = useCallback((id: string) => void open(id), [open]);
@@ -78,7 +87,7 @@ export function App() {
         loaded.recordings.find((r) => r.id === wanted)?.id ??
         nextToAnnotate(loaded.recordings, null) ??
         loaded.recordings[0]?.id;
-      if (id && !(await open(id))) setError(`couldn't open ${id}`);
+      if (id && (await open(id)) === 'failed') setError(`couldn't open ${id}`);
     };
     start().catch((reason: unknown) => setError(String(reason)));
     return () => {
@@ -150,8 +159,9 @@ export function App() {
   if (!queue || !opened || !current) return <p className="message">Loading…</p>;
 
   /** Saves the outcome, then opens the next recording; keys are off all the while. */
-  const handOver = async ({ action, text, undo }: Outcome) => {
+  const handOver = async ({ action, text, undo }: Decision) => {
     const { annotation } = opened;
+    const mine = ++handOvers.current;
     setHandingOver(true);
     try {
       if (!(await annotation.finish(action))) {
@@ -176,12 +186,14 @@ export function App() {
       const { status } = annotation.editor.getState().outcome;
       const recordings = queue.recordings.map((r) => (r.id === current ? { ...r, status } : r));
       setQueue({ ...queue, recordings });
+      void refreshQueue();
+      // A link followed while saving has already decided where to go.
+      if (latest.current !== current) return;
       const after = nextToAnnotate(recordings, current);
       if (after) await open(after);
       else setShowQueue(true);
-      void refreshQueue();
     } finally {
-      setHandingOver(false);
+      if (handOvers.current === mine) setHandingOver(false);
     }
   };
   const openQueue = () => {
@@ -206,7 +218,7 @@ export function App() {
             onOpenQueue={openQueue}
           />
         }
-        onOutcome={(outcome) => void handOver(outcome)}
+        onDecision={(decision) => void handOver(decision)}
         onToast={setToast}
       />
       {showQueue && (

@@ -6,13 +6,10 @@
  *
  *   pnpm build && pnpm demo [--catalog derived/catalog.json]
  */
-import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { chromium, type Page } from '@playwright/test';
+import { type Browser, chromium, type Page } from '@playwright/test';
 import { readCatalog } from '../src/server/catalog.ts';
+import { startServer } from './local-server.ts';
 
 const { values } = parseArgs({
   options: {
@@ -20,25 +17,17 @@ const { values } = parseArgs({
   },
 });
 const PORT = 5178;
-const BASE = `http://127.0.0.1:${PORT}`;
 const SIZE = { width: 1440, height: 900 };
 
 const catalog = await readCatalog(values.catalog);
 const [folding, second, , long] = catalog.recordings.map((r) => r.id);
 if (!folding || !second || !long) throw new Error('the demo needs the four recordings ingested');
 
-const work = await mkdtemp(join(tmpdir(), 'annotator-demo-'));
-const server = spawn(
-  process.execPath,
-  [
-    ...[resolve('src/server/main.ts'), '--port', String(PORT), '--catalog', values.catalog],
-    ...['--annotations', join(work, 'annotations'), '--telemetry', join(work, 'events.jsonl')],
-  ],
-  { stdio: ['ignore', 'ignore', 'inherit'] },
-);
-const browser = await chromium.launch({ channel: 'chrome', headless: false });
+const server = await startServer(PORT, values.catalog);
+const BASE = server.url;
+let browser: Browser | null = null;
 try {
-  await waitForServer();
+  browser = await chromium.launch({ channel: 'chrome', headless: false });
   const context = await browser.newContext({ viewport: SIZE });
   const page = await context.newPage();
   await page.goto(`${BASE}/#${folding}`);
@@ -126,9 +115,8 @@ try {
   await pause(4000);
   await context.close();
 } finally {
-  await browser.close();
-  server.kill();
-  await rm(work, { recursive: true, force: true });
+  await browser?.close();
+  await server.stop();
 }
 
 /** Shows a one-line caption at the top of the page (part of the demo, not of the tool). */
@@ -163,16 +151,4 @@ function waitForFrame(page: Page, frame: number) {
 
 function pause(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForServer(): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const up = await fetch(`${BASE}/api/queue`).then(
-      (r) => r.ok,
-      () => false,
-    );
-    if (up) return;
-    await pause(200);
-  }
-  throw new Error('the server did not start');
 }

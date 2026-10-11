@@ -38,17 +38,19 @@ const SAVE_EVENTS: Partial<Record<SaveStatus['kind'], string>> = {
   rejected: 'save_rejected',
 };
 
-/** How an action checked a rough mark, for `boundary_accepted`. */
-function howChecked(action: EditorAction): string {
+/** How an action checked a rough mark, for `boundary_accepted`; null if it can't. */
+function howChecked(action: EditorAction): string | null {
   switch (action.type) {
     case 'confirm':
       return 'enter';
+    case 'nudge':
+      return 'nudge';
     case 'move':
       return action.origin === 'drag' ? 'drag' : 'filmstrip';
     case 'move-nearest':
       return 'move_here';
     default:
-      return action.type;
+      return null;
   }
 }
 
@@ -209,7 +211,8 @@ export class AnnotationSession {
     const visit = this.#visit;
     if (visit && after.anchor === visit.anchor) {
       const boundary = after.history.present.boundaries.find((b) => b.frame === after.selected);
-      if (boundary?.checked) visit.how ??= howChecked(action);
+      // Undo or a cancelled drag can make it rough again: then it hasn't been checked after all.
+      visit.how = boundary?.checked ? (visit.how ?? howChecked(action)) : null;
       if (action.type === 'confirm') this.#endVisit();
       return;
     }

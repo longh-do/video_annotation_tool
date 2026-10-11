@@ -40,8 +40,8 @@ import { usePlayer } from './player/use-player.ts';
 import type { LoadedRecording } from './recording.ts';
 import { readResumeFrame, readSetting, writeResumeFrame, writeSetting } from './settings.ts';
 
-/** An outcome to save, and what to say once it is saved. */
-export interface Outcome {
+/** The annotator's decision about a recording: the outcome to save, and what to say after. */
+export interface Decision {
   readonly action: EditorAction;
   readonly text: string;
   /** The toast offers Undo (else Back): only when undo restores what the outcome removed. */
@@ -60,14 +60,14 @@ interface WorkspaceProps {
   /** Keys and edits are off: the queue is open, or an outcome is being handed over. */
   readonly blocked: boolean;
   /** Saves the outcome and moves the queue on; keys stay off meanwhile. */
-  readonly onOutcome: (outcome: Outcome) => void;
+  readonly onDecision: (decision: Decision) => void;
   readonly onToast: (message: ToastMessage) => void;
 }
 
 type Question = 'keep-to-end' | 'no-task' | 'review';
 
 export function Workspace(props: WorkspaceProps) {
-  const { recording, annotation, session, canMark, blocked, onOutcome, onToast } = props;
+  const { recording, annotation, session, canMark, blocked, onDecision, onToast } = props;
   const { info, frames: cameraFrames } = recording;
   const camera = info.cameras[0]!;
   const frames = cameraFrames[0]!;
@@ -190,9 +190,9 @@ export function Workspace(props: WorkspaceProps) {
     !blocked &&
     asking === null;
 
-  const finish = (outcome: Outcome) => {
+  const finish = (decision: Decision) => {
     setAsking(null);
-    onOutcome(outcome);
+    onDecision(decision);
   };
   const submit = {
     action: { type: 'submit' },

@@ -79,10 +79,10 @@ prints, per recording and in total: start and stop error in frames (median, p90 
 ## Tests
 
 ```bash
-pnpm lint       # Biome, a lint rule that keeps nanoseconds out of Numbers, and TypeScript
-pnpm test       # unit and property tests (fast-check)
-pnpm test:e2e   # Playwright in Chrome on generated clips whose frames show their own index
-pnpm perf       # the longest real recording with 320 boundaries at 2×: must draw at 60 fps
+pnpm lint                 # Biome, a lint rule that keeps nanoseconds out of Numbers, and TypeScript
+pnpm test                 # unit and property tests (fast-check)
+pnpm test:e2e             # Playwright in Chrome on generated clips whose frames show their index
+pnpm build && pnpm perf   # the longest real recording, 320 boundaries, 2×: must draw at 60 fps
 ```
 
 The end-to-end tests need ffmpeg: they generate small variable-frame-rate clips in which every frame carries its index as a barcode, so a test can check which frame the browser really shows. No company data is in the repository.

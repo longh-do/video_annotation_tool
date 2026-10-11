@@ -98,6 +98,26 @@ describe('annotation session', () => {
     ]);
   });
 
+  test('a check that is undone, or a drag that is cancelled, is no check', () => {
+    const { editor } = session;
+    editor.dispatch({ type: 'mark', frame: 100, state: 'keep', origin: 'live' });
+    editor.dispatch({ type: 'select', frame: 100 });
+    editor.dispatch({ type: 'nudge', delta: -1, now: 0 });
+    editor.dispatch({ type: 'undo' }); // rough again
+    editor.dispatch({ type: 'drag-start', index: 0 });
+    editor.dispatch({ type: 'move', index: 0, frame: 90, origin: 'drag' });
+    editor.dispatch({ type: 'drag-cancel' }); // rough again
+    editor.dispatch({ type: 'select', frame: null }); // leaves it
+    expect(accepted()).toEqual([]);
+    // Checked later with Enter: one acceptance, by Enter.
+    editor.dispatch({ type: 'select', frame: 100 });
+    vi.advanceTimersByTime(800);
+    editor.dispatch({ type: 'confirm', index: 0 });
+    expect(accepted()).toEqual([
+      { event: 'boundary_accepted', frame: 100, how: 'enter', check_ms: 800 },
+    ]);
+  });
+
   test('active time counts while the screen is open, and the submit summary agrees with the save', async () => {
     const detach = session.attach(() => ({ frame: 20, playbackRate: 2 }));
     session.editor.dispatch({ type: 'mark', frame: 30, state: 'keep', origin: 'paused' });

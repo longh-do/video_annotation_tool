@@ -292,3 +292,92 @@ test('two tabs on one recording: the stale one stops saving instead of overwriti
   expect(frames).toEqual([30, 60]);
   await other.context().close();
 });
+
+test("if the outcome can't be saved, the recording stays and the keys come back", async ({
+  page,
+}) => {
+  await open(page, first.id, 0);
+  await markInterval(page, 10, 20);
+  await expect(page.locator('.save-chip')).toHaveAttribute('data-save', 'saved');
+  await page.route(`**/api/annotations/${first.id}`, (route) =>
+    route.request().method() === 'PUT' ? route.abort() : route.continue(),
+  );
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(page.locator('.toast')).toContainText('Not saved yet');
+  await expect(page.locator('.recording-id')).toHaveText(first.id);
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.time[data-frame="21"]')).toBeVisible();
+  await page.unroute(`**/api/annotations/${first.id}`);
+});
+
+test('with nothing left to do, the queue opens after the last outcome', async ({ page }) => {
+  for (const recording of SYNTHETIC_RECORDINGS.filter((r) => r.id !== first.id)) {
+    const current = await saved(page.request, recording.id);
+    const response = await page.request.put(`/api/annotations/${recording.id}`, {
+      headers: { 'If-Match': `"${current?.revision ?? 0}"` },
+      data: {
+        annotation: {
+          recording_id: recording.id,
+          reference_video: 'videos/head-0000.mp4',
+          status: 'complete',
+          keep_intervals: [],
+          notes: '',
+        },
+        sidecar: {
+          schema_version: 1,
+          frame_count: recording.headFrames,
+          boundaries: [],
+          review_reason: null,
+          resume: { frame: 0, playback_rate: 2 },
+          effort: { active_ms: 0, wall_ms: 0, edits: 0, undos: 0 },
+        },
+      },
+    });
+    expect(response.ok()).toBe(true);
+  }
+  await open(page, first.id, 0);
+  await markInterval(page, 10, 20);
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(page.getByRole('dialog', { name: 'Queue' })).toBeVisible();
+  await expect(page.locator('.recording-id')).toHaveText(first.id);
+});
+
+test('Back on the toast while the next recording loads returns at once, keys working', async ({
+  page,
+}) => {
+  await open(page, first.id, 0);
+  await markInterval(page, 10, 20);
+  // The next recording takes a while to load.
+  await page.route(`**/api/annotations/${second.id}`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await route.continue().catch(() => {});
+  });
+  await page.keyboard.press('ControlOrMeta+Enter');
+  await page.locator('.toast').getByRole('button', { name: 'Back' }).click();
+  // Back to work well before the slow load would have finished.
+  await expect(page.locator('.workspace')).not.toHaveAttribute('inert', { timeout: 1000 });
+  await expect(page.locator('.recording-id')).toHaveText(first.id);
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.time[data-frame="21"]')).toBeVisible();
+  // When the slow load finishes, it doesn't take over.
+  await page.waitForTimeout(3000);
+  await expect(page.locator('.recording-id')).toHaveText(first.id);
+});
+
+test('a link followed while the first recording loads opens the link, without an error', async ({
+  page,
+}) => {
+  await page.route(`**/api/annotations/${first.id}`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue().catch(() => {});
+  });
+  await page.goto(`/#${first.id}/0`);
+  await page.waitForTimeout(300);
+  await page.evaluate((hash) => {
+    location.hash = hash;
+  }, `${second.id}/5`);
+  await expect(page.locator('.recording-id')).toHaveText(second.id);
+  await page.waitForTimeout(2000);
+  await expect(page.locator('.recording-id')).toHaveText(second.id);
+  await expect(page.getByText("Couldn't load")).toHaveCount(0);
+});

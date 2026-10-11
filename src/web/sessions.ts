@@ -39,10 +39,6 @@ export class Sessions {
     return pending;
   }
 
-  get(id: string): AnnotationSession | undefined {
-    return this.#kept.get(id);
-  }
-
   /** Something isn't on the server yet. */
   get dirty(): boolean {
     return [...this.#kept.values()].some((annotation) => annotation.saver.dirty);
