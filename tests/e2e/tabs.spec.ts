@@ -3,7 +3,7 @@
  * them may edit: the other opens the recording read-only until the first lets go of it.
  */
 import { expect, type Page, test } from '@playwright/test';
-import { resetAnnotation, savedAnnotation } from './server-state.ts';
+import { resetAll, savedAnnotation } from './server-state.ts';
 import { SYNTHETIC_RECORDINGS, type SyntheticRecording } from './synthetic.ts';
 
 const recording = SYNTHETIC_RECORDINGS[2] as SyntheticRecording;
@@ -25,9 +25,7 @@ async function savedFrames(page: Page) {
   return (saved?.sidecar?.boundaries ?? []).map((b) => b.frame);
 }
 
-test.beforeEach(async ({ request }) => {
-  await resetAnnotation(request, recording.id);
-});
+test.beforeEach(({ request }) => resetAll(request));
 
 test('a second tab on the same recording is read-only until the first one closes', async ({
   page,
