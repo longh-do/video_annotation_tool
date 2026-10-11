@@ -17,6 +17,8 @@ import { displayedFrame, type FrameMap } from '../../core/frame-map.ts';
 /** True: the frame is on screen. False: another frame is. Null: the browser gave no sign. */
 export type SeekResult = boolean | null;
 
+/** The first picture can take seconds over a slow connection; one this late counts as failed. */
+const LOAD_TIMEOUT_MS = 15_000;
 /** A far seek over a slow connection can take seconds before the video has the data. */
 const SEEKED_TIMEOUT_MS = 15_000;
 /** Once seeked, the frame callback comes within a frame or two. */
@@ -27,7 +29,7 @@ const SAME_FRAME_TIMEOUT_MS = 150;
 export class FrameClock {
   readonly #video: HTMLVideoElement;
   readonly #frames: FrameMap;
-  readonly #loaded: Promise<unknown>;
+  readonly #loaded: Promise<boolean>;
   #displayed = -1;
   #waiters: ((frame: number) => void)[] = [];
   readonly #listeners = new Set<(frame: number) => void>();
@@ -39,10 +41,7 @@ export class FrameClock {
     }
     this.#video = video;
     this.#frames = frames;
-    this.#loaded =
-      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
-        ? Promise.resolve()
-        : new Promise((resolve) => video.addEventListener('loadeddata', resolve, { once: true }));
+    this.#loaded = firstPicture(video);
     const onFrame: VideoFrameRequestCallback = (_now, metadata) => {
       this.#displayed = displayedFrame(frames, 0, metadata.mediaTime);
       for (const resolve of this.#waiters.splice(0)) resolve(this.#displayed);
@@ -78,11 +77,20 @@ export class FrameClock {
   }
 
   /**
+   * True once the video has a picture; false if it failed to load or still has none after
+   * LOAD_TIMEOUT_MS (a later call can still find it loaded).
+   */
+  async loaded(): Promise<boolean> {
+    return (await within(this.#loaded, LOAD_TIMEOUT_MS)) === true;
+  }
+
+  /**
    * Shows frame `k` and resolves once the browser has presented it. Paused only: it retries once,
-   * unless playback started meanwhile (a retry would yank the playing video back).
+   * unless playback started meanwhile (a retry would yank the playing video back). Null, without
+   * seeking, when the video has not loaded.
    */
   async seekToFrame(k: number): Promise<SeekResult> {
-    await this.#loaded;
+    if (!(await this.loaded())) return null;
     const first = await this.#seekOnce(k);
     return first === true || !this.#video.paused ? first : this.#seekOnce(k);
   }
@@ -118,6 +126,16 @@ export class FrameClock {
     if (frame === null) this.#waiters = this.#waiters.filter((w) => w !== waiter);
     return frame;
   }
+}
+
+/** True once the video's first picture has loaded; false if the video fails to load instead. */
+function firstPicture(video: HTMLVideoElement): Promise<boolean> {
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve(true);
+  if (video.error) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    video.addEventListener('loadeddata', () => resolve(true), { once: true });
+    video.addEventListener('error', () => resolve(false), { once: true });
+  });
 }
 
 /** True when `type` fires on `target` within `ms`, false otherwise. */

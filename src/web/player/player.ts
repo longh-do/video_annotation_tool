@@ -25,7 +25,10 @@ export interface PlayerSnapshot {
   /** The marking speed; skimming overrides it meanwhile. */
   readonly speed: number;
   readonly skimming: boolean;
-  /** A paused seek could not be verified: the screen may not show the frame a mark would save. */
+  /**
+   * A paused seek could not be verified, or the video failed to load: the screen may not show the
+   * frame a mark would save.
+   */
   readonly seekFailed: boolean;
 }
 
@@ -56,18 +59,25 @@ export class Player {
 
     this.#disposers.push(this.clock.subscribe((frame) => this.#update({ frame })));
     // During playback the frame callbacks name the frames; a failed paused seek no longer matters.
-    const onPlay = () => this.#update({ playing: true, seekFailed: false });
+    // A video that failed still does: it shows no frame that a mark could be checked against.
+    const onPlay = () => this.#update({ playing: true, seekFailed: video.error !== null });
     const onPause = () => this.#update({ playing: false });
+    const onError = () => this.#update({ seekFailed: true });
     const onVisible = () => {
       // Frame callbacks stop while the page is hidden; make sure the picture and state agree.
       if (document.visibilityState === 'visible' && video.paused) this.#snapToScreen();
     };
+    void this.clock.loaded().then((loaded) => {
+      if (!loaded) onError();
+    });
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
+    video.addEventListener('error', onError);
     document.addEventListener('visibilitychange', onVisible);
     this.#disposers.push(() => {
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
+      video.removeEventListener('error', onError);
       document.removeEventListener('visibilitychange', onVisible);
       this.clock.dispose();
     });
@@ -98,7 +108,8 @@ export class Player {
   play(): void {
     if (this.#video.ended) return;
     this.#queue.cancel();
-    void this.#video.play();
+    // Refused when a pause interrupts it or the video failed; the events tell the rest.
+    this.#video.play().catch(() => {});
   }
 
   /** Pauses, then puts `currentTime` on the frame actually on screen (unless a seek came first). */

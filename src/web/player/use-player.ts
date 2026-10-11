@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from 'react';
-import type { Player, PlayerSnapshot } from './player.ts';
+import { DEFAULT_SPEED, type Player, type PlayerSnapshot } from './player.ts';
 
 const STOPPED: PlayerSnapshot = {
   frame: -1,
   playing: false,
-  speed: 2,
+  speed: DEFAULT_SPEED,
   skimming: false,
   seekFailed: false,
 };

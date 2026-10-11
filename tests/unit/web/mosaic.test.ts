@@ -34,6 +34,11 @@ describe('camera mosaic', () => {
     expect(m.sideWidth / m.sideHeight).toBeCloseTo(4 / 3, 1);
   });
 
+  test('portrait small cameras get portrait tiles', () => {
+    const m = mosaic(1400, 600, { main: 4 / 3, side: 9 / 16 }, 2, 8);
+    expect(m.sideWidth / m.sideHeight).toBeCloseTo(9 / 16, 1);
+  });
+
   test('one camera alone fills what it can; a tiny stage gives empty tiles, never negative ones', () => {
     expect(mosaic(1000, 600, FOUR_THREE, 0, 8)).toEqual({
       mainWidth: 800,
