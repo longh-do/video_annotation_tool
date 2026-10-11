@@ -37,7 +37,10 @@ export interface Boundary {
 
 export interface Timeline {
   readonly frameCount: number;
-  /** Strictly increasing frames, each in [0, frameCount). */
+  /**
+   * Strictly increasing frames, each in [0, frameCount), each changing the state: a boundary that
+   * would repeat the state before it changes nothing, so it is dropped.
+   */
   readonly boundaries: readonly Boundary[];
 }
 
@@ -85,25 +88,31 @@ export function setStateFrom(t: Timeline, frame: number, state: State, origin: O
 }
 
 /**
- * Nudge and drag. Clamped between the neighbours, never past them. Choosing the frame a live
- * mark already sits on confirms it, like Enter in the check pass.
+ * Nudge and drag. Clamped between the neighbours, never past them. The boundary lands where the
+ * annotator put it, so it is exact. A move that can't go anywhere (a neighbour in the way, or
+ * dropped where it was) changes nothing, and doesn't confirm a live mark: only a check does.
  */
-export function moveBoundary(t: Timeline, index: number, frame: number, origin: Origin): Timeline {
+export function moveBoundary(
+  t: Timeline,
+  index: number,
+  frame: number,
+  origin: 'drag' | 'nudge',
+): Timeline {
   const boundary = boundaryAt(t, index);
   if (!Number.isInteger(frame)) throw new RangeError(`frame ${frame} is not an integer`);
   const lo = (t.boundaries[index - 1]?.frame ?? -1) + 1;
   const hi = (t.boundaries[index + 1]?.frame ?? t.frameCount) - 1;
   const to = Math.min(Math.max(frame, lo), hi);
-  if (to === boundary.frame) return origin === 'live' ? t : markChecked(t, index);
-  const moved: Boundary = { ...boundary, frame: to, origin, checked: origin !== 'live' };
+  if (to === boundary.frame) return t;
+  const moved: Boundary = { ...boundary, frame: to, origin, checked: true };
   return withBoundaries(t, t.boundaries.with(index, moved));
 }
 
 /**
  * The timeline's right-click menu: every frame in [from, to) becomes `state` — deleting an
  * interval, merging two by keeping the gap between them, keeping a cut stretch. The boundaries
- * inside the range go, through boundaries included; the frames outside it keep their state, and
- * a boundary that stays keeps its origin and check.
+ * inside the range go; the frames outside it keep their state, and a boundary that stays keeps
+ * its origin and check.
  */
 export function setRange(t: Timeline, from: number, to: number, state: State): Timeline {
   assertFrame(t, from);
@@ -147,22 +156,22 @@ export function clearAll(t: Timeline): Timeline {
 }
 
 /**
- * A through boundary has the same state on both sides, so it changes nothing in the output.
- * It stays on the timeline (drawn dotted) to keep later edits local: deleting the boundary that
- * made it redundant brings it back into effect.
+ * The boundaries that change the state. One that repeats the state already in force changes
+ * nothing, and left on the timeline it would quietly cut a later interval short (S, then D on the
+ * same frame, then S earlier and D later); undo is what brings a dropped boundary back.
  */
-export function isThrough(t: Timeline, index: number): boolean {
-  const before = t.boundaries[index - 1]?.state ?? 'cut';
-  return boundaryAt(t, index).state === before;
+export function changesOnly(boundaries: readonly Boundary[]): Boundary[] {
+  const kept: Boundary[] = [];
+  for (const b of boundaries) if (b.state !== (kept.at(-1)?.state ?? 'cut')) kept.push(b);
+  return kept;
 }
 
-/** The timeline as maximal runs of one state, with through boundaries merged away. */
+/** The timeline as maximal runs of one state. */
 export function segments(t: Timeline): Segment[] {
   const runs: Segment[] = [];
   let start = 0;
   let state: State = 'cut';
   for (const boundary of t.boundaries) {
-    if (boundary.state === state) continue;
     if (boundary.frame > start) runs.push({ start, end: boundary.frame, state });
     start = boundary.frame;
     state = boundary.state;
@@ -188,7 +197,7 @@ function assertFrame(t: Timeline, frame: number): void {
 }
 
 function withBoundaries(t: Timeline, boundaries: readonly Boundary[]): Timeline {
-  return { frameCount: t.frameCount, boundaries };
+  return { frameCount: t.frameCount, boundaries: changesOnly(boundaries) };
 }
 
 function placed(frame: number, state: State): Boundary {

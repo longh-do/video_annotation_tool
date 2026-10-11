@@ -3,11 +3,11 @@
  * exact frame, and confirm it. Boundaries set while paused are exact already and are skipped.
  */
 import { type FrameMap, frameNs, stopNs } from './frame-map.ts';
-import { isThrough, type Segment, segments, type Timeline } from './timeline.ts';
+import { type Segment, segments, type Timeline } from './timeline.ts';
 
-/** Indices of boundaries still to check: live, unconfirmed, and not through boundaries. */
+/** Indices of boundaries still to check: live and unconfirmed. */
 export function boundariesToCheck(t: Timeline): number[] {
-  return t.boundaries.flatMap((b, i) => (!b.checked && !isThrough(t, i) ? [i] : []));
+  return t.boundaries.flatMap((b, i) => (b.checked ? [] : [i]));
 }
 
 /** The first boundary to check after `frame`, wrapping to the start; -1 when none is left. */

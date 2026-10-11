@@ -11,6 +11,7 @@ import { type FrameMap, frameCount, frameNs, positionAtNs, stopNs } from './fram
 import { isNsString, parseNs } from './ns.ts';
 import {
   type Boundary,
+  changesOnly,
   emptyTimeline,
   keepSegments,
   ORIGINS,
@@ -255,7 +256,8 @@ export function timelineFromSidecar(boundaries: readonly unknown[], frames: Fram
     if (i > 0 && b.frame <= restored[i - 1]!.frame)
       throw new Error(`boundaries[${i}] is out of order`);
   });
-  return { frameCount: frameCount(frames), boundaries: restored };
+  // A save from before boundaries that change nothing were dropped can still hold some.
+  return { frameCount: frameCount(frames), boundaries: changesOnly(restored) };
 }
 
 function assertSameFrames(t: Timeline, frames: FrameMap): void {

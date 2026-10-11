@@ -3,9 +3,6 @@ import { describe, expect, test } from 'vitest';
 import {
   beginGesture,
   cancelGesture,
-  canRedo,
-  canUndo,
-  closeRun,
   commit,
   createHistory,
   endGesture,
@@ -24,16 +21,13 @@ describe('history', () => {
     expect(h.present).toBe('b');
     h = undo(h);
     expect(h.present).toBe('a');
-    expect(canUndo(h)).toBe(false);
     h = redo(redo(h));
     expect(h.present).toBe('c');
-    expect(canRedo(h)).toBe(false);
   });
 
   test('a commit after undo drops the redo branch', () => {
     const h = commit(undo(commit(createHistory('a'), 'b')), 'c');
     expect(h.present).toBe('c');
-    expect(canRedo(h)).toBe(false);
     expect(undo(h).present).toBe('a');
   });
 
@@ -48,8 +42,6 @@ describe('history', () => {
     expect(h.past).toEqual([0]);
     h = commit(h, 11, { key: 'nudge:3', now: 300 + RUN_WINDOW_MS + 1 });
     expect(h.past).toEqual([0, 10]);
-    h = commit(closeRun(h), 12, { key: 'nudge:3', now: 300 + RUN_WINDOW_MS + 2 });
-    expect(h.past).toEqual([0, 10, 11]);
   });
 
   test('the run window is inclusive at exactly RUN_WINDOW_MS', () => {
@@ -72,14 +64,13 @@ describe('history', () => {
     const h = commit(beginGesture(commit(createHistory(0), 1)), 2);
     expect(undo(h).present).toBe(1);
     expect(cancelGesture(h).present).toBe(1);
-    expect(canRedo(h)).toBe(false);
   });
 });
 
 // Model-based test: the history must behave like a plain list of states plus a cursor.
 type Action =
   | { kind: 'commit'; value: number; key: string | null; dt: number }
-  | { kind: 'undo' | 'redo' | 'begin' | 'end' | 'cancel' | 'closeRun' };
+  | { kind: 'undo' | 'redo' | 'begin' | 'end' | 'cancel' };
 
 const actionArb: fc.Arbitrary<Action> = fc.oneof(
   {
@@ -91,7 +82,7 @@ const actionArb: fc.Arbitrary<Action> = fc.oneof(
       dt: fc.constantFrom(30, 30, 1000),
     }),
   },
-  ...(['undo', 'redo', 'begin', 'end', 'cancel', 'closeRun'] as const).map((kind) => ({
+  ...(['undo', 'redo', 'begin', 'end', 'cancel'] as const).map((kind) => ({
     weight: 1,
     arbitrary: fc.constant({ kind }),
   })),
@@ -151,9 +142,6 @@ function step(h: History<number>, m: Model, a: Action, now: number): History<num
     case 'cancel':
       m.gesture = null;
       return cancelGesture(h);
-    case 'closeRun':
-      m.run = null;
-      return closeRun(h);
   }
 }
 
@@ -167,14 +155,15 @@ test('history behaves like a list of states with a cursor', () => {
         now += action.kind === 'commit' ? action.dt : 0;
         h = step(h, m, action, now);
         expect(h.present).toBe(m.gesture?.current ?? m.states[m.cursor]);
-        expect(canUndo(h)).toBe(m.gesture !== null || m.cursor > 0);
-        expect(canRedo(h)).toBe(m.gesture === null && m.cursor < m.states.length - 1);
+        expect(h.gestureBase !== null).toBe(m.gesture !== null);
+        expect(h.past).toHaveLength(m.cursor);
+        expect(h.future).toHaveLength(m.states.length - 1 - m.cursor);
       }
       // Undoing everything and redoing it all returns to the same state.
       h = endGesture(h);
       const final = h.present;
       let undone = 0;
-      while (canUndo(h)) {
+      while (h.past.length > 0) {
         h = undo(h);
         undone++;
       }

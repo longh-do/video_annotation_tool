@@ -162,7 +162,7 @@ export function createPointerActions(ctx: CommandContext): PointerActions {
     },
     drag: (index, frame) => {
       if (!dragging()) return;
-      showSelected(ctx, editor.dispatch({ type: 'move', index, frame, origin: 'drag' }));
+      showSelected(ctx, editor.dispatch({ type: 'move', index, frame }));
     },
     dragEnd: () => {
       if (dragging()) editor.dispatch({ type: 'drag-end' });

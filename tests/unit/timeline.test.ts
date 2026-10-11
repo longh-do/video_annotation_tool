@@ -4,7 +4,6 @@ import {
   clearAll,
   deleteBoundary,
   emptyTimeline,
-  isThrough,
   keepSegments,
   markChecked,
   moveBoundary,
@@ -43,20 +42,23 @@ describe('S and D set the state from a frame on', () => {
     expect(keepSegments(keep(empty, 90))).toEqual([{ start: 90, end: FRAMES, state: 'keep' }]);
   });
 
-  test('a mark on an existing boundary replaces it', () => {
+  test('a mark on an existing boundary takes it back', () => {
+    // S at 10, D at 40, then S at 40: the keep from 10 goes on, and nothing is left at 40.
     const t = keep(cut(keep(empty, 10), 40), 40);
-    expect(frames(t)).toEqual([10, 40]);
+    expect(frames(t)).toEqual([10]);
     expect(keepSegments(t)).toEqual([{ start: 10, end: FRAMES, state: 'keep' }]);
   });
 
-  test('an early D leaves the later D as a through boundary that comes back when needed', () => {
-    const original = cut(keep(empty, 10), 40);
-    const early = cut(original, 25);
-    expect(frames(early)).toEqual([10, 25, 40]);
-    expect(isThrough(early, 2)).toBe(true);
-    expect(keepSegments(early)).toEqual([{ start: 10, end: 25, state: 'keep' }]);
-    // Deleting the early D restores the original interval instead of keeping to END.
-    expect(keepSegments(deleteBoundary(early, 1))).toEqual(keepSegments(original));
+  test('a boundary that changes nothing is dropped, so the marks after it work as pressed', () => {
+    // S at 10, then D at 10 to take it back: nothing is left behind to cut the next interval short.
+    const t = cut(keep(cut(keep(empty, 10), 10), 5), 40);
+    expect(keepSegments(t)).toEqual([{ start: 5, end: 40, state: 'keep' }]);
+    expect(frames(t)).toEqual([5, 40]);
+    // An early D makes the later D redundant: it goes, and undo is what brings it back.
+    expect(frames(cut(cut(keep(empty, 10), 40), 25))).toEqual([10, 25]);
+    // Deleting a boundary drops the one after it if that one now changes nothing.
+    const two = cut(keep(cut(keep(empty, 10), 20), 30), 40);
+    expect(frames(deleteBoundary(two, 1))).toEqual([10, 40]);
   });
 
   test('live marks need checking; paused marks are exact', () => {
@@ -76,20 +78,21 @@ describe('corrections', () => {
     expect(moveBoundary(t, 1, 40, 'nudge')).toBe(t);
   });
 
-  test('moving a live mark checks it, unless it is moved live again', () => {
+  test('moving a live mark puts it where the annotator chose, so it is exact', () => {
     const live = setStateFrom(empty, 10, 'keep', 'live');
     expect(moveBoundary(live, 0, 8, 'nudge').boundaries[0]).toMatchObject({ checked: true });
-    expect(moveBoundary(live, 0, 12, 'live').boundaries[0]).toMatchObject({ checked: false });
+    expect(moveBoundary(live, 0, 12, 'drag').boundaries[0]).toMatchObject({ checked: true });
   });
 
-  test('choosing the frame a live mark already sits on confirms it', () => {
+  test('a move that lands where the mark is changes nothing, and does not confirm it', () => {
     const live = setStateFrom(empty, 10, 'keep', 'live');
-    expect(moveBoundary(live, 0, 10, 'placed').boundaries[0]).toMatchObject({
-      frame: 10,
-      origin: 'live',
-      checked: true,
+    expect(moveBoundary(live, 0, 10, 'drag')).toBe(live);
+    expect(
+      moveBoundary(setStateFrom(live, 11, 'cut', 'live'), 1, 10, 'nudge').boundaries[1],
+    ).toMatchObject({
+      frame: 11,
+      checked: false,
     });
-    expect(moveBoundary(live, 0, 10, 'live')).toBe(live);
   });
 
   test('deleting an interval removes both of its boundaries', () => {
@@ -175,6 +178,16 @@ describe('properties of every reachable timeline', () => {
     const next = t.boundaries.find((b) => b.frame > frame)?.frame ?? t.frameCount;
     return [frame, next] as const;
   };
+
+  test('every boundary changes the state: none repeats the state before it', () => {
+    fc.assert(
+      fc.property(arb, (t) => {
+        t.boundaries.forEach((b, i) => {
+          expect(b.state).not.toBe(t.boundaries[i - 1]?.state ?? 'cut');
+        });
+      }),
+    );
+  });
 
   test('boundaries stay strictly increasing and inside the recording', () => {
     fc.assert(
@@ -267,7 +280,7 @@ describe('properties of every reachable timeline', () => {
     );
   });
 
-  test('deleting a boundary extends the previous run; deleting a through boundary changes nothing', () => {
+  test('deleting a boundary extends the previous run', () => {
     const input = arb
       .filter((t) => t.boundaries.length > 0)
       .chain((t) => fc.tuple(fc.constant(t), fc.nat({ max: t.boundaries.length - 1 })));
@@ -280,7 +293,6 @@ describe('properties of every reachable timeline', () => {
         frameStates(deleted).forEach((s, f) => {
           expect(s).toBe(f >= from && f < to ? previous : before[f]);
         });
-        if (isThrough(t, index)) expect(segments(deleted)).toEqual(segments(t));
       }),
     );
   });

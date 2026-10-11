@@ -10,7 +10,6 @@ import type { ReviewReason, Status } from '../core/annotation.ts';
 import {
   beginGesture,
   cancelGesture,
-  closeRun,
   commit,
   createHistory,
   endGesture,
@@ -67,13 +66,8 @@ export type EditorAction =
       readonly state: State;
       readonly origin: Origin;
     }
-  /** A drag of a known boundary. */
-  | {
-      readonly type: 'move';
-      readonly index: number;
-      readonly frame: number;
-      readonly origin: Origin;
-    }
+  /** A step of a drag of a known boundary. */
+  | { readonly type: 'move'; readonly index: number; readonly frame: number }
   /** , and . on the selected boundary; a held key is one undo step. */
   | { readonly type: 'nudge'; readonly delta: number; readonly now: number }
   /** The timeline's menu: delete an interval, merge two, keep a cut stretch. */
@@ -85,7 +79,10 @@ export type EditorAction =
     }
   /** A click on a boundary's badge. */
   | { readonly type: 'delete-boundary'; readonly index: number }
-  /** Backspace: the selected boundary, or else the selected interval. */
+  /**
+   * Backspace: the selected interval, or else the selected boundary. Trimming an interval selects
+   * its edge as well; Backspace still means the interval.
+   */
   | { readonly type: 'delete-selected' }
   /** Enter in the check pass. */
   | { readonly type: 'confirm'; readonly index: number }
@@ -98,7 +95,6 @@ export type EditorAction =
   | { readonly type: 'drag-end' }
   /** Escape during a drag: the boundary goes back, still selected. */
   | { readonly type: 'drag-cancel' }
-  | { readonly type: 'close-run' }
   | { readonly type: 'submit' }
   | { readonly type: 'no-task' }
   | { readonly type: 'needs-review'; readonly reason: ReviewReason; readonly notes: string };
@@ -155,7 +151,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         selecting(action.frame),
       );
     case 'move':
-      return moveTo(state, action.index, action.frame, action.origin);
+      return moveTo(state, action.index, action.frame, 'drag');
     case 'nudge': {
       const index = selectedIndex(state);
       if (index < 0) return state;
@@ -175,11 +171,12 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         ? edit(state, deleteBoundary(present, action.index), selecting(null))
         : state;
     case 'delete-selected': {
-      const index = selectedIndex(state);
-      if (index >= 0) return edit(state, deleteBoundary(present, index), selecting(null));
       const interval = selectedInterval(state);
-      if (!interval) return state;
-      return edit(state, setRange(present, interval.start, interval.end, 'cut'), selecting(null));
+      if (interval) {
+        return edit(state, setRange(present, interval.start, interval.end, 'cut'), selecting(null));
+      }
+      const index = selectedIndex(state);
+      return index < 0 ? state : edit(state, deleteBoundary(present, index), selecting(null));
     }
     case 'confirm': {
       const frame = present.boundaries[action.index]?.frame ?? null;
@@ -195,13 +192,15 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case 'redo': {
       const history = (action.type === 'undo' ? undo : redo)(state.history);
       if (history === state.history) return state;
-      const undos = state.undos + (action.type === 'undo' ? 1 : 0);
+      // Undo during a drag only cancels the drag, which changed nothing yet.
+      const cancelsDrag = state.history.gestureBase !== null;
+      const undos = state.undos + (action.type === 'undo' && !cancelsDrag ? 1 : 0);
       return {
         ...state,
         ...reselect(state, history.present),
         history,
         undos,
-        outcome: draft(state.outcome),
+        outcome: cancelsDrag ? state.outcome : draft(state.outcome),
       };
     }
     case 'drag-start': {
@@ -215,8 +214,9 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     case 'drag-end': {
       const history = endGesture(state.history);
       if (history === state.history) return state;
-      const changed = history.past.length > state.history.past.length;
-      return { ...state, history, edits: state.edits + (changed ? 1 : 0) };
+      // A drag that ended where it began changes nothing, the outcome included.
+      if (history.past.length === state.history.past.length) return { ...state, history };
+      return { ...state, history, outcome: draft(state.outcome), edits: state.edits + 1 };
     }
     case 'drag-cancel': {
       const history = cancelGesture(state.history);
@@ -227,10 +227,9 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       const interval = state.interval === state.selected ? selected : state.interval;
       return { ...state, history, selected, interval };
     }
-    case 'close-run':
-      return { ...state, history: closeRun(state.history) };
     case 'submit':
-      return { ...state, outcome: { ...state.outcome, status: 'complete', reviewReason: null } };
+      // A note written for a review request doesn't belong in a complete annotation.
+      return { ...state, outcome: { status: 'complete', notes: '', reviewReason: null } };
     case 'no-task': {
       const cleared = edit(state, clearAll(present), selecting(null));
       return { ...cleared, outcome: { status: 'complete', notes: '', reviewReason: null } };
@@ -251,7 +250,7 @@ function moveTo(
   state: EditorState,
   index: number,
   frame: number,
-  origin: Origin,
+  origin: 'drag' | 'nudge',
   run?: Run,
 ): EditorState {
   const base = state.history.gestureBase ?? state.history.present;
@@ -270,7 +269,11 @@ function edgeOfSelected(state: EditorState, frame: number): boolean {
   return interval !== null && (frame === interval.start || frame === interval.end);
 }
 
-/** Applies a timeline edit; a no-op edit leaves the state untouched. A drag counts once, at its end. */
+/**
+ * Applies a timeline edit; a no-op edit leaves the state untouched. An edit counts once per undo
+ * step, so a held nudge key is one edit. A drag's steps change neither the count nor the outcome:
+ * its end does, if the drag moved anything (drag-end).
+ */
 function edit(
   state: EditorState,
   timeline: Timeline,
@@ -278,13 +281,15 @@ function edit(
   run?: Run,
 ): EditorState {
   if (timeline === state.history.present) return state;
-  const dragging = state.history.gestureBase !== null;
+  const history = commit(state.history, timeline, run);
+  if (history.gestureBase !== null) return { ...state, ...selection, history };
+  const stepped = history.past.length > state.history.past.length;
   return {
     ...state,
     ...selection,
-    history: commit(state.history, timeline, run),
+    history,
     outcome: draft(state.outcome),
-    edits: state.edits + (dragging ? 0 : 1),
+    edits: state.edits + (stepped ? 1 : 0),
   };
 }
 

@@ -12,7 +12,7 @@ const live = (t: Timeline, frame: number, state: 'keep' | 'cut') =>
   setStateFrom(t, frame, state, 'live');
 
 describe('which boundaries the check pass visits', () => {
-  // live keep @10, paused cut @20, live keep @30, live cut @40, then a through boundary @50
+  // live keep @10, paused cut @20, live keep @30, live cut @40 (which drops the live cut @50)
   let t = emptyTimeline(100);
   t = live(t, 10, 'keep');
   t = setStateFrom(t, 20, 'cut', 'paused');

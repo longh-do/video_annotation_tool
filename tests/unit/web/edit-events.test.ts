@@ -50,29 +50,40 @@ describe('edit events', () => {
     ]);
   });
 
-  test('moves are logged with how they were made; nothing is guessed from list positions', () => {
+  test('a nudge is logged as an adjustment, with where the boundary went', () => {
     expect(
       events([
-        { type: 'mark', frame: 100, state: 'keep', origin: 'live' },
-        { type: 'mark', frame: 50, state: 'keep', origin: 'paused' }, // inserted before it
+        { type: 'mark', frame: 50, state: 'keep', origin: 'live' },
+        { type: 'mark', frame: 100, state: 'cut', origin: 'live' },
+        { type: 'select', frame: 50 },
         { type: 'nudge', delta: -2, now: 0 },
-        { type: 'move', index: 1, frame: 120, origin: 'placed' },
-        { type: 'confirm', index: 1 },
+        { type: 'confirm', index: 0 },
       ]).map((e) => [e.event, e.fields]),
     ).toEqual([
-      ['boundary_set', { frame: 100, state: 'keep', origin: 'live' }],
-      ['boundary_set', { frame: 50, state: 'keep', origin: 'paused' }],
+      ['boundary_set', { frame: 50, state: 'keep', origin: 'live' }],
+      ['boundary_set', { frame: 100, state: 'cut', origin: 'live' }],
       ['boundary_adjusted', { how: 'nudge', from: 50, to: 48 }],
-      ['boundary_adjusted', { how: 'placed', from: 100, to: 120 }],
     ]);
+  });
+
+  test('Backspace on a selected interval logs the interval, even with its edge selected too', () => {
+    const log = events([
+      { type: 'mark', frame: 10, state: 'keep', origin: 'paused' },
+      { type: 'mark', frame: 30, state: 'cut', origin: 'paused' },
+      { type: 'select-interval', start: 10 },
+      { type: 'drag-start', index: 1 },
+      { type: 'drag-cancel' },
+      { type: 'delete-selected' },
+    ]);
+    expect(log.at(-1)).toEqual({ event: 'range_set', fields: { from: 10, to: 30, state: 'cut' } });
   });
 
   test('a drag is logged once, when it ends, with where it started', () => {
     const log = events([
       { type: 'mark', frame: 40, state: 'keep', origin: 'live' },
       { type: 'drag-start', index: 0 },
-      { type: 'move', index: 0, frame: 45, origin: 'drag' },
-      { type: 'move', index: 0, frame: 50, origin: 'drag' },
+      { type: 'move', index: 0, frame: 45 },
+      { type: 'move', index: 0, frame: 50 },
       { type: 'drag-end' },
     ]);
     expect(log.slice(1)).toEqual([
@@ -80,14 +91,12 @@ describe('edit events', () => {
     ]);
   });
 
-  test('a boundary put on a chosen frame is logged as placed; selecting logs nothing', () => {
+  test('selecting logs nothing', () => {
     const log = events([
       { type: 'mark', frame: 40, state: 'keep', origin: 'paused' },
       { type: 'select', frame: null },
       { type: 'select', frame: 40 },
-      { type: 'move', index: 0, frame: 33, origin: 'placed' },
     ]);
-    expect(log.map((e) => e.event)).toEqual(['boundary_set', 'boundary_adjusted']);
-    expect(log[1]?.fields).toEqual({ how: 'placed', from: 40, to: 33 });
+    expect(log.map((e) => e.event)).toEqual(['boundary_set']);
   });
 });

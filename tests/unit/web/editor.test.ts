@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { RUN_WINDOW_MS } from '../../../src/core/history.ts';
-import { emptyTimeline } from '../../../src/core/timeline.ts';
+import { emptyTimeline, keepSegments } from '../../../src/core/timeline.ts';
 import {
   createEditor,
   type EditorAction,
@@ -104,7 +104,7 @@ describe('editor', () => {
     const trimmed = run(
       [
         { type: 'drag-start', index: 0 },
-        { type: 'move', index: 0, frame: 14, origin: 'drag' },
+        { type: 'move', index: 0, frame: 14 },
         { type: 'drag-end' },
       ],
       marked,
@@ -125,7 +125,7 @@ describe('editor', () => {
     const cancelled = run(
       [
         { type: 'drag-start', index: 0 },
-        { type: 'move', index: 0, frame: 14, origin: 'drag' },
+        { type: 'move', index: 0, frame: 14 },
         { type: 'drag-cancel' },
       ],
       marked,
@@ -161,8 +161,8 @@ describe('editor', () => {
     const dragged = run(
       [
         { type: 'drag-start', index: 0 },
-        { type: 'move', index: 0, frame: 14, origin: 'drag' },
-        { type: 'move', index: 0, frame: 18, origin: 'drag' },
+        { type: 'move', index: 0, frame: 14 },
+        { type: 'move', index: 0, frame: 18 },
         { type: 'drag-end' },
       ],
       marked,
@@ -173,8 +173,8 @@ describe('editor', () => {
     const back = run(
       [
         { type: 'drag-start', index: 0 },
-        { type: 'move', index: 0, frame: 14, origin: 'drag' },
-        { type: 'move', index: 0, frame: 10, origin: 'drag' },
+        { type: 'move', index: 0, frame: 14 },
+        { type: 'move', index: 0, frame: 10 },
         { type: 'drag-end' },
       ],
       marked,
@@ -191,7 +191,7 @@ describe('editor', () => {
     const dragging = run(
       [
         { type: 'drag-start', index: 0 },
-        { type: 'move', index: 0, frame: 16, origin: 'drag' },
+        { type: 'move', index: 0, frame: 16 },
       ],
       marked,
     );
@@ -258,7 +258,7 @@ describe('editor', () => {
     state = run(
       [
         { type: 'nudge', delta: -3, now: 0 },
-        { type: 'move', index: 1, frame: 44, origin: 'placed' },
+        { type: 'move', index: 1, frame: 44 },
       ],
       state,
     );
@@ -266,7 +266,104 @@ describe('editor', () => {
     state = editorReducer(state, { type: 'select', frame: 10 });
     expect(state).toMatchObject({ selected: 10, anchor: 10 });
     // Moving a boundary that wasn't selected anchors it where it was.
-    state = editorReducer(state, { type: 'move', index: 1, frame: 40, origin: 'drag' });
+    state = editorReducer(state, { type: 'move', index: 1, frame: 40 });
     expect(state).toMatchObject({ selected: 40, anchor: 44 });
+  });
+
+  test('Backspace after trimming the selected interval deletes that interval, not its edge', () => {
+    const marked = run([
+      { type: 'mark', frame: 10, state: 'keep', origin: 'paused' },
+      { type: 'mark', frame: 30, state: 'cut', origin: 'paused' },
+      { type: 'mark', frame: 50, state: 'keep', origin: 'paused' },
+      { type: 'mark', frame: 70, state: 'cut', origin: 'paused' },
+      { type: 'select-interval', start: 10 },
+    ]);
+    const deleted = run(
+      [
+        { type: 'drag-start', index: 1 },
+        { type: 'move', index: 1, frame: 25 },
+        { type: 'drag-end' },
+        { type: 'delete-selected' },
+      ],
+      marked,
+    );
+    expect(keepSegments(deleted.history.present)).toEqual([{ start: 50, end: 70, state: 'keep' }]);
+    expect(deleted).toMatchObject({ selected: null, interval: null });
+  });
+
+  test('a held nudge key is one edit, as it is one undo step', () => {
+    let state = run([{ type: 'mark', frame: 10, state: 'keep', origin: 'paused' }]);
+    const edits = state.edits;
+    for (let i = 0; i < 30; i++) {
+      state = editorReducer(state, { type: 'nudge', delta: 1, now: i * 33 });
+    }
+    expect(frames(state)).toEqual([40]);
+    expect(state.edits).toBe(edits + 1);
+  });
+
+  test('a move that cannot go anywhere changes nothing: it does not confirm a live mark', () => {
+    const marked = run([
+      { type: 'mark', frame: 10, state: 'keep', origin: 'live' },
+      { type: 'mark', frame: 11, state: 'cut', origin: 'live' },
+    ]);
+    // The mark at 11 is selected, and 10 is in the way.
+    expect(editorReducer(marked, { type: 'nudge', delta: -1, now: 0 })).toBe(marked);
+    const dropped = run(
+      [
+        { type: 'drag-start', index: 0 },
+        { type: 'move', index: 0, frame: 10 },
+        { type: 'drag-end' },
+      ],
+      marked,
+    );
+    expect(dropped.history.present).toBe(marked.history.present);
+    expect(dropped.history.present.boundaries.every((b) => !b.checked)).toBe(true);
+  });
+
+  test('a drag that is cancelled or ends where it began leaves a submitted annotation submitted', () => {
+    const submitted = run([
+      { type: 'mark', frame: 10, state: 'keep', origin: 'paused' },
+      { type: 'submit' },
+    ]);
+    const cancelled = run(
+      [
+        { type: 'drag-start', index: 0 },
+        { type: 'move', index: 0, frame: 14 },
+        { type: 'drag-cancel' },
+      ],
+      submitted,
+    );
+    expect(cancelled.outcome).toBe(submitted.outcome);
+    expect(cancelled.history.present).toBe(submitted.history.present);
+    const back = run(
+      [
+        { type: 'drag-start', index: 0 },
+        { type: 'move', index: 0, frame: 14 },
+        { type: 'move', index: 0, frame: 10 },
+        { type: 'drag-end' },
+      ],
+      submitted,
+    );
+    expect(back.outcome).toBe(submitted.outcome);
+    // A drag that does move it makes the annotation a draft again.
+    const moved = run(
+      [
+        { type: 'drag-start', index: 0 },
+        { type: 'move', index: 0, frame: 14 },
+        { type: 'drag-end' },
+      ],
+      submitted,
+    );
+    expect(moved.outcome.status).toBe('not_reviewed');
+  });
+
+  test('Submit clears a review note left from before', () => {
+    const state = run([
+      { type: 'mark', frame: 10, state: 'keep', origin: 'paused' },
+      { type: 'needs-review', reason: 'unclear_boundary', notes: 'Unclear boundary: hand hidden' },
+      { type: 'mark', frame: 50, state: 'cut', origin: 'paused' },
+      { type: 'submit' },
+    ]);
+    expect(state.outcome).toEqual({ status: 'complete', notes: '', reviewReason: null });
   });
 });

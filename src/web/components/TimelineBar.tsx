@@ -8,13 +8,7 @@ import {
   stopNs,
 } from '../../core/frame-map.ts';
 import { durationSeconds } from '../../core/ns.ts';
-import {
-  isThrough,
-  keepSegments,
-  type Segment,
-  segments,
-  type Timeline,
-} from '../../core/timeline.ts';
+import { keepSegments, type Segment, segments, type Timeline } from '../../core/timeline.ts';
 import { clock } from '../format.ts';
 import type { Player } from '../player/player.ts';
 import { usePlayer } from '../player/use-player.ts';
@@ -228,8 +222,7 @@ export function TimelineBar(props: TimelineBarProps) {
       if (x < -8 || x > width + 8) return;
       if (boundary.frame !== selected && x - previous < BADGE_GAP_PX) return;
       previous = x;
-      // A boundary that changes nothing needs no check, whatever its origin.
-      const kind = isThrough(timeline, index) ? 'through' : !boundary.checked ? 'unchecked' : 'set';
+      const kind = boundary.checked ? 'set' : 'unchecked';
       const time = clock((frames.ptsUs[boundary.frame] ?? 0) / 1e6);
       const what = boundary.state === 'keep' ? 'Start' : 'Stop';
       shown.push({ index, frame: boundary.frame, x, kind, time, what });
@@ -341,7 +334,7 @@ interface Badge {
   readonly index: number;
   readonly frame: number;
   readonly x: number;
-  readonly kind: 'set' | 'unchecked' | 'through';
+  readonly kind: 'set' | 'unchecked';
   readonly time: string;
   readonly what: 'Start' | 'Stop';
 }
@@ -350,7 +343,6 @@ function badgeTitle({ kind, time, what }: Badge): string {
   if (kind === 'unchecked') {
     return `${what} at ${time} — needs check: marked while the video played, so it may be a few frames late. Enter checks it. Click to delete, drag to move.`;
   }
-  if (kind === 'through') return `Changes nothing here (the same on both sides). Click to delete.`;
   return `${what} at ${time}. Click to delete, drag to move.`;
 }
 
@@ -518,24 +510,21 @@ function draw(canvas: HTMLCanvasElement, d: Drawing) {
   }
   g.globalAlpha = 1;
 
-  // Boundary lines that need attention: the selected one, marks to check, and those that change
-  // nothing (dashed). The others are plain from the colours on either side.
-  timeline.boundaries.forEach((boundary, i) => {
+  // Boundary lines that need attention: the selected one and marks to check. The others are
+  // plain from the colours on either side.
+  for (const boundary of timeline.boundaries) {
     const bx = at(boundary.frame);
-    if (bx < -2 || bx > width + 2) return;
-    const through = isThrough(timeline, i);
-    const toCheck = !boundary.checked && !through;
+    if (bx < -2 || bx > width + 2) continue;
+    const toCheck = !boundary.checked;
     const selected = boundary.frame === d.selected;
-    if (!selected && !toCheck && !through) return;
-    g.strokeStyle = selected ? colors.text : toCheck ? colors.unchecked : colors.muted;
-    g.lineWidth = selected || toCheck ? 2 : 1;
-    g.setLineDash(through && !selected ? [3, 3] : []);
+    if (!selected && !toCheck) continue;
+    g.strokeStyle = selected ? colors.text : colors.unchecked;
+    g.lineWidth = 2;
     g.beginPath();
     g.moveTo(bx, TRACK_TOP);
     g.lineTo(bx, TRACK_TOP + TRACK_HEIGHT);
     g.stroke();
-  });
-  g.setLineDash([]);
+  }
 }
 
 /** Thin diagonal lines: cuts differ from kept intervals in pattern as well as colour. */

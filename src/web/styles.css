@@ -461,11 +461,6 @@ kbd {
   background: var(--unchecked);
 }
 
-.tl-badge-through {
-  background: var(--raised);
-  border: 1px dashed var(--muted);
-}
-
 .tl-badge-selected {
   box-shadow:
     0 0 0 2px var(--text),

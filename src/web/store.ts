@@ -20,7 +20,15 @@ export class Store<S, A> {
     const before = this.#state;
     const next = this.#reducer(before, action);
     this.#state = next;
-    for (const observer of this.#observers) observer(action, before, next);
+    // Observers only watch (telemetry): one that fails must not keep the change from the
+    // listeners, the saver among them.
+    for (const observer of this.#observers) {
+      try {
+        observer(action, before, next);
+      } catch (error) {
+        console.error(error);
+      }
+    }
     if (next !== before) for (const listener of this.#listeners) listener();
     return next;
   };

@@ -90,7 +90,7 @@ describe('annotation session', () => {
     vi.advanceTimersByTime(4000);
     editor.dispatch({ type: 'drag-start', index: 1 });
     vi.advanceTimersByTime(2000);
-    editor.dispatch({ type: 'move', index: 1, frame: 140, origin: 'drag' });
+    editor.dispatch({ type: 'move', index: 1, frame: 140 });
     editor.dispatch({ type: 'drag-end' });
     vi.advanceTimersByTime(1000);
     editor.dispatch({ type: 'select', frame: 100 }); // off to another boundary
@@ -106,7 +106,7 @@ describe('annotation session', () => {
     editor.dispatch({ type: 'nudge', delta: -1, now: 0 });
     editor.dispatch({ type: 'undo' }); // rough again
     editor.dispatch({ type: 'drag-start', index: 0 });
-    editor.dispatch({ type: 'move', index: 0, frame: 90, origin: 'drag' });
+    editor.dispatch({ type: 'move', index: 0, frame: 90 });
     editor.dispatch({ type: 'drag-cancel' }); // rough again
     editor.dispatch({ type: 'select', frame: null }); // leaves it
     expect(accepted()).toEqual([]);

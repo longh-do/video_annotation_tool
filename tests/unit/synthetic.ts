@@ -90,7 +90,12 @@ export const frameMapArb = (maxFrames = 60) =>
 /** One user edit; positions are taken modulo the timeline's size so they fit any timeline. */
 export type Edit =
   | { readonly kind: 'set'; readonly at: number; readonly state: State; readonly origin: Origin }
-  | { readonly kind: 'move'; readonly which: number; readonly to: number; readonly origin: Origin }
+  | {
+      readonly kind: 'move';
+      readonly which: number;
+      readonly to: number;
+      readonly origin: 'drag' | 'nudge';
+    }
   | { readonly kind: 'range'; readonly at: number; readonly length: number; readonly state: State }
   | { readonly kind: 'delete'; readonly which: number }
   | { readonly kind: 'check'; readonly which: number };
@@ -114,7 +119,7 @@ export const editArb: fc.Arbitrary<Edit> = fc.oneof(
       kind: fc.constant('move' as const),
       which: position,
       to: position,
-      origin,
+      origin: fc.constantFrom('drag' as const, 'nudge' as const),
     }),
   },
   {

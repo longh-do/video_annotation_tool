@@ -1,6 +1,6 @@
 /**
  * Telemetry for edits, derived from the editor's actions in one place rather than logged from
- * every key and click. Event names follow the plan's event list (G2).
+ * every key and click.
  */
 import type { Timeline } from '../core/timeline.ts';
 import { type EditorAction, type EditorState, selectedInterval } from './editor.ts';
@@ -29,7 +29,7 @@ export function editEvent(
       };
     case 'move':
       // A drag's every step is not worth an event; its end is.
-      return action.origin === 'drag' ? null : adjusted('placed', was, now);
+      return null;
     case 'nudge':
       return adjusted('nudge', was, now);
     case 'drag-end':
@@ -42,13 +42,11 @@ export function editEvent(
     case 'delete-boundary':
       return { event: 'boundary_deleted', fields: { frame: was.boundaries[action.index]?.frame } };
     case 'delete-selected': {
-      if (before.selected !== null) {
-        return { event: 'boundary_deleted', fields: { frame: before.selected } };
-      }
       const interval = selectedInterval(before);
+      if (!interval) return { event: 'boundary_deleted', fields: { frame: before.selected } };
       return {
         event: 'range_set',
-        fields: { from: interval?.start, to: interval?.end, state: 'cut' },
+        fields: { from: interval.start, to: interval.end, state: 'cut' },
       };
     }
     case 'undo':

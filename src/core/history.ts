@@ -47,11 +47,6 @@ export function commit<S>(h: History<S>, next: S, run?: Run): History<S> {
   };
 }
 
-/** Ends a run early, e.g. when the nudge key is released. */
-export function closeRun<S>(h: History<S>): History<S> {
-  return h.run === null ? h : { ...h, run: null };
-}
-
 export function beginGesture<S>(h: History<S>): History<S> {
   return h.gestureBase !== null ? h : { ...h, run: null, gestureBase: h.present };
 }
@@ -67,14 +62,6 @@ export function endGesture<S>(h: History<S>): History<S> {
 export function cancelGesture<S>(h: History<S>): History<S> {
   const base = h.gestureBase;
   return base === null ? h : { ...h, present: base, gestureBase: null };
-}
-
-export function canUndo<S>(h: History<S>): boolean {
-  return h.gestureBase !== null || h.past.length > 0;
-}
-
-export function canRedo<S>(h: History<S>): boolean {
-  return h.gestureBase === null && h.future.length > 0;
 }
 
 export function undo<S>(h: History<S>): History<S> {
