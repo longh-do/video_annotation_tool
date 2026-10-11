@@ -48,14 +48,20 @@ kbd {
   color: var(--muted);
 }
 
-/* Layout: top bar, video stage, controls, key legend. */
+/* Layout: top bar; video stage and controls, with the side panel beside both; key legend. */
 .workspace {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template:
+    "top top" auto
+    "stage panel" minmax(0, 1fr)
+    "controls panel" auto
+    "legend legend" auto
+    / minmax(0, 1fr) 300px;
   height: 100vh;
 }
 
 .topbar {
+  grid-area: top;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -101,6 +107,7 @@ kbd {
 }
 
 .stage {
+  grid-area: stage;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 22%);
   gap: 12px;
@@ -165,6 +172,7 @@ kbd {
 
 /* Readout and timeline. */
 .controls {
+  grid-area: controls;
   padding: 0 16px 8px;
 }
 
@@ -208,8 +216,6 @@ kbd {
 .overview {
   position: relative;
   height: 40px;
-  border-radius: 6px;
-  overflow: hidden;
   cursor: pointer;
 }
 
@@ -217,6 +223,23 @@ kbd {
   display: block;
   width: 100%;
   height: 100%;
+  border-radius: 6px;
+}
+
+/* Hover preview: the keyframe at or before the pointer, above the strip. */
+.preview {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  z-index: 1;
+  padding: 3px;
+  transform: translateX(-50%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  pointer-events: none;
 }
 
 .playhead {
@@ -231,6 +254,7 @@ kbd {
 
 /* Key legend and help. */
 .legend {
+  grid-area: legend;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -286,4 +310,214 @@ kbd {
 .help .close {
   grid-column: 1 / -1;
   justify-self: end;
+}
+
+/* Detail timeline: twenty seconds around the playhead, with draggable boundary handles. */
+.detail {
+  position: relative;
+  height: 56px;
+  margin-top: 8px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.detail canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  margin-left: -7px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--text);
+}
+
+.handle-rough::after {
+  background: var(--rough);
+}
+
+.handle-through::after {
+  opacity: 0.4;
+}
+
+.handle-selected::after {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgb(90 160 255 / 0.35);
+}
+
+/* Check pass: status, and the filmstrip around the boundary being checked. Its height is
+   reserved, so the video doesn't jump when the filmstrip comes and goes. */
+.check {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 128px;
+  padding-bottom: 8px;
+}
+
+.check-status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.check-warning {
+  color: var(--rough);
+}
+
+button.check-warning {
+  padding: 0 8px;
+  border-color: var(--rough);
+}
+
+.filmstrip {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.filmstrip legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* Thirteen thumbnails share the width, up to their natural size. */
+.thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 104px;
+  padding: 2px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.thumb canvas {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border-radius: 3px;
+}
+
+.thumb-mark {
+  border-color: var(--rough);
+}
+
+.thumb-boundary {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* Side panel: kept intervals and the guideline. */
+.panel {
+  grid-area: panel;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 12px 16px 8px 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.panel-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-tabs button[aria-selected="true"] {
+  border-color: var(--accent);
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+}
+
+.empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+.intervals {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.interval {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 4px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.interval-current {
+  border-color: var(--keep);
+}
+
+.interval-index {
+  min-width: 2ch;
+  color: var(--muted);
+}
+
+.interval-length {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.interval-rough {
+  color: var(--rough);
+}
+
+.guideline {
+  font-size: 13px;
+}
+
+.guideline h1 {
+  font-size: 15px;
+}
+
+.guideline h2 {
+  font-size: 13px;
+  margin-top: 14px;
+}
+
+.guideline a {
+  color: var(--accent);
+}
+
+.guideline-version {
+  color: var(--muted);
+  font-size: 11px;
 }

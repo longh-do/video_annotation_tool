@@ -1,20 +1,27 @@
 /**
- * The annotation screen for one recording: the reference video with the secondary cameras, the
- * state and save chips, the timeline, and the key legend. The keyboard does everything; every key
- * also has a button.
+ * The annotation screen for one recording: the reference video beside the secondary cameras and
+ * a side panel (kept intervals, guideline); under it the state chip, the check pass and the two
+ * timelines; the key legend at the bottom. The keyboard does everything; every key also has a
+ * button.
  */
 import { useEffect, useEffectEvent, useMemo, useState, useSyncExternalStore } from 'react';
 import type { Session } from '../core/api-types.ts';
 import { createCommands } from './commands.ts';
 import { CameraView } from './components/CameraView.tsx';
+import { CheckPanel } from './components/CheckPanel.tsx';
+import { DetailTimeline } from './components/DetailTimeline.tsx';
+import { GuidelinePanel } from './components/GuidelinePanel.tsx';
+import { IntervalList } from './components/IntervalList.tsx';
 import { HelpOverlay, KeyLegend } from './components/KeyLegend.tsx';
 import { Overview } from './components/Overview.tsx';
 import { Readout } from './components/Readout.tsx';
 import { SaveChip } from './components/SaveChip.tsx';
-import { type EditorAction, type EditorState, editorReducer } from './editor.ts';
+import { SidePanel } from './components/SidePanel.tsx';
+import { type EditorAction, type EditorState, editorReducer, selectedIndex } from './editor.ts';
 import { type Command, installKeymap, type KeyHandler } from './keymap.ts';
 import { placeFromHash } from './location.ts';
 import { fromSaved, toSavePayload } from './persistence.ts';
+import { FrameGrabber } from './player/frame-grabber.ts';
 import { DEFAULT_SPEED, Player, SKIM_SPEED } from './player/player.ts';
 import { usePlayer } from './player/use-player.ts';
 import type { LoadedRecording } from './recording.ts';
@@ -44,6 +51,7 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
 
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const [player, setPlayer] = useState<Player | null>(null);
+  const [grabber, setGrabber] = useState<FrameGrabber | null>(null);
   const speedLabel = usePlayer(player, (s) => (s.skimming ? `${SKIM_SPEED}× skim` : `${s.speed}×`));
   const seekFailed = usePlayer(player, (s) => s.seekFailed);
   const [showHelp, setShowHelp] = useState(false);
@@ -55,6 +63,12 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
     setPlayer(created);
     return () => created.dispose();
   }, [video, frames]);
+
+  useEffect(() => {
+    const created = new FrameGrabber(camera.videoUrl, frames);
+    setGrabber(created);
+    return () => created.dispose();
+  }, [camera.videoUrl, frames]);
 
   // Open at the frame a link names, else where this recording was left. An applied link is
   // trimmed from the URL, so a reload reopens where the annotator was, not at the old link.
@@ -136,10 +150,10 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
     if (!showHelp && document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }, [showHelp]);
 
-  // Editing stops once saving has: anything typed after a conflict would be lost.
-  const canEdit = useEffectEvent(
-    () => canMark && recording.seekable && !seekFailed && !saver.stopped && !showHelp,
-  );
+  // Editing stops once saving has: anything typed after a conflict would be lost. Keys don't
+  // edit during a drag either: the drag is one undo step.
+  const editable = canMark && recording.seekable && !seekFailed && !saver.stopped && !showHelp;
+  const canEdit = useEffectEvent(() => editable && editor.getState().history.gestureBase === null);
   const soundOn = useEffectEvent(() => sound);
   const commands = useMemo(
     () =>
@@ -157,7 +171,8 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
         submit: () => {},
         noTask: () => {},
         needsReview: () => {},
-        playAround: () => {},
+        playAround: () =>
+          player.playAround(editor.getState().selected ?? Math.max(player.frame, 0)),
       }),
     [player, editor],
   );
@@ -171,6 +186,15 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
   const toggleSound = () => {
     setSound(!sound);
     writeSetting('sound', !sound);
+  };
+  /** Select a boundary and show its frame. */
+  const goTo = (frame: number) => {
+    editor.dispatch({ type: 'select', frame });
+    player?.seek(frame);
+  };
+  /** Show where an edit put the selected boundary. */
+  const showSelected = (next: EditorState) => {
+    if (next.selected !== null) player?.seek(next.selected);
   };
 
   return (
@@ -250,14 +274,61 @@ export function Workspace({ recording, session, canMark }: WorkspaceProps) {
               {sound ? 'Sound on' : 'Sound off'}
             </button>
           </div>
+          <CheckPanel
+            player={player}
+            grabber={grabber}
+            timeline={state.history.present}
+            frames={frames}
+            selected={state.selected}
+            anchor={state.anchor}
+            onVisit={goTo}
+            onPick={(frame) => {
+              const index = selectedIndex(editor.getState());
+              if (!editable || index < 0) return;
+              showSelected(editor.dispatch({ type: 'move', index, frame, origin: 'placed' }));
+            }}
+          />
           <Overview
             player={player}
             timeline={state.history.present}
             frames={frames}
             selected={state.selected}
+            thumbnails={info.thumbnails}
             onSeek={(target) => player?.seek(target)}
           />
+          <DetailTimeline
+            player={player}
+            timeline={state.history.present}
+            frames={frames}
+            selected={state.selected}
+            onSeek={(target) => player?.seek(target)}
+            onDragStart={(index) => {
+              if (editable) showSelected(editor.dispatch({ type: 'drag-start', index }));
+            }}
+            onDrag={(index, frame) => {
+              if (editor.getState().history.gestureBase === null) return;
+              showSelected(editor.dispatch({ type: 'move', index, frame, origin: 'drag' }));
+            }}
+            onDragEnd={() => editor.dispatch({ type: 'drag-end' })}
+            onDragCancel={() => showSelected(editor.dispatch({ type: 'drag-cancel' }))}
+          />
         </section>
+
+        <SidePanel
+          tabs={{
+            Intervals: (
+              <IntervalList
+                player={player}
+                timeline={state.history.present}
+                frames={frames}
+                onSelect={goTo}
+              />
+            ),
+            ...(session.guideline && {
+              Guideline: <GuidelinePanel version={session.guideline.version} />,
+            }),
+          }}
+        />
 
         <KeyLegend onRun={run} />
       </div>

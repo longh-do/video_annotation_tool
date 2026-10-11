@@ -42,6 +42,11 @@ export interface EditorState {
   readonly history: History<Timeline>;
   /** Frame of the selected boundary. View state: undo never records it. */
   readonly selected: number | null;
+  /**
+   * Where the selected boundary was when work on it began. The check filmstrip is laid out
+   * around it and stays put while the boundary moves, so frames don't slide under the pointer.
+   */
+  readonly anchor: number | null;
   readonly outcome: Outcome;
   /** Effort counters, saved in the sidecar. */
   readonly edits: number;
@@ -75,8 +80,10 @@ export type EditorAction =
   | { readonly type: 'select'; readonly frame: number | null }
   | { readonly type: 'undo' }
   | { readonly type: 'redo' }
-  | { readonly type: 'drag-start' }
+  /** A boundary handle is grabbed: it is selected, and the drag becomes one undo step. */
+  | { readonly type: 'drag-start'; readonly index: number }
   | { readonly type: 'drag-end' }
+  /** Escape during a drag: the boundary goes back, still selected. */
   | { readonly type: 'drag-cancel' }
   | { readonly type: 'close-run' }
   | { readonly type: 'submit' }
@@ -90,7 +97,18 @@ export function createEditor(
   outcome: Outcome = DRAFT,
   counts = { edits: 0, undos: 0 },
 ): EditorState {
-  return { history: createHistory(timeline), selected: null, outcome, ...counts };
+  return { history: createHistory(timeline), selected: null, anchor: null, outcome, ...counts };
+}
+
+type Selection = Pick<EditorState, 'selected' | 'anchor'>;
+
+/** Selecting a boundary starts work on it: the anchor is where it is now. */
+function selecting(frame: number | null): Selection {
+  return { selected: frame, anchor: frame };
+}
+
+function unchanged(state: EditorState): Selection {
+  return { selected: state.selected, anchor: state.anchor };
 }
 
 /** Index of the selected boundary, or -1. */
@@ -105,7 +123,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       return edit(
         state,
         setStateFrom(present, action.frame, action.state, action.origin),
-        action.frame,
+        selecting(action.frame),
       );
     case 'move':
       return moveTo(state, action.index, action.frame, action.origin);
@@ -120,48 +138,52 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       return index < 0 ? state : moveTo(state, index, action.frame, action.origin);
     }
     case 'flip':
-      return edit(state, flipSegmentAt(present, action.frame), state.selected);
+      return edit(state, flipSegmentAt(present, action.frame), unchanged(state));
     case 'delete-selected': {
       const index = selectedIndex(state);
-      return index < 0 ? state : edit(state, deleteBoundary(present, index), null);
+      return index < 0 ? state : edit(state, deleteBoundary(present, index), selecting(null));
     }
-    case 'confirm':
-      return edit(
-        state,
-        markChecked(present, action.index),
-        present.boundaries[action.index]?.frame ?? null,
-      );
+    case 'confirm': {
+      const frame = present.boundaries[action.index]?.frame ?? null;
+      const selection = frame === state.selected ? unchanged(state) : selecting(frame);
+      return edit(state, markChecked(present, action.index), selection);
+    }
     case 'select':
-      return action.frame === state.selected ? state : { ...state, selected: action.frame };
+      return action.frame === state.selected ? state : { ...state, ...selecting(action.frame) };
     case 'undo':
     case 'redo': {
       const history = (action.type === 'undo' ? undo : redo)(state.history);
       if (history === state.history) return state;
       const kept = history.present.boundaries.some((b) => b.frame === state.selected);
       const undos = state.undos + (action.type === 'undo' ? 1 : 0);
-      return {
-        ...state,
-        history,
-        selected: kept ? state.selected : null,
-        undos,
-        outcome: draft(state.outcome),
-      };
+      const selection = kept ? unchanged(state) : selecting(null);
+      return { ...state, ...selection, history, undos, outcome: draft(state.outcome) };
     }
-    case 'drag-start':
-      return { ...state, history: beginGesture(state.history) };
+    case 'drag-start': {
+      const frame = present.boundaries[action.index]?.frame;
+      if (frame === undefined) return state;
+      const selection = frame === state.selected ? unchanged(state) : selecting(frame);
+      return { ...state, ...selection, history: beginGesture(state.history) };
+    }
     case 'drag-end': {
       const history = endGesture(state.history);
+      if (history === state.history) return state;
       const changed = history.past.length > state.history.past.length;
       return { ...state, history, edits: state.edits + (changed ? 1 : 0) };
     }
-    case 'drag-cancel':
-      return { ...state, history: cancelGesture(state.history) };
+    case 'drag-cancel': {
+      const history = cancelGesture(state.history);
+      if (history === state.history) return state;
+      // A drag keeps the boundary's index, so the selection follows it back.
+      const selected = history.present.boundaries[selectedIndex(state)]?.frame ?? null;
+      return { ...state, history, selected };
+    }
     case 'close-run':
       return { ...state, history: closeRun(state.history) };
     case 'submit':
       return { ...state, outcome: { ...state.outcome, status: 'complete', reviewReason: null } };
     case 'no-task': {
-      const cleared = edit(state, clearAll(present), null);
+      const cleared = edit(state, clearAll(present), selecting(null));
       return { ...cleared, outcome: { status: 'complete', notes: '', reviewReason: null } };
     }
     case 'needs-review':
@@ -172,7 +194,10 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
   }
 }
 
-/** Moves a boundary and selects it where it landed. During a drag, steps start from the drag's base. */
+/**
+ * Moves a boundary and selects it where it landed, keeping the anchor if it was already the one
+ * being worked on. During a drag, steps start from the drag's base.
+ */
 function moveTo(
   state: EditorState,
   index: number,
@@ -182,22 +207,25 @@ function moveTo(
 ): EditorState {
   const base = state.history.gestureBase ?? state.history.present;
   const timeline = moveBoundary(base, index, frame, origin);
-  return edit(state, timeline, timeline.boundaries[index]?.frame ?? null, run);
+  const was = state.history.present.boundaries[index]?.frame ?? null;
+  const landed = timeline.boundaries[index]?.frame ?? null;
+  const anchor = was === state.selected ? (state.anchor ?? was) : was;
+  return edit(state, timeline, { selected: landed, anchor }, run);
 }
 
 /** Applies a timeline edit; a no-op edit leaves the state untouched. A drag counts once, at its end. */
 function edit(
   state: EditorState,
   timeline: Timeline,
-  selected: number | null,
+  selection: Selection,
   run?: Run,
 ): EditorState {
   if (timeline === state.history.present) return state;
   const dragging = state.history.gestureBase !== null;
   return {
     ...state,
+    ...selection,
     history: commit(state.history, timeline, run),
-    selected,
     outcome: draft(state.outcome),
     edits: state.edits + (dragging ? 0 : 1),
   };

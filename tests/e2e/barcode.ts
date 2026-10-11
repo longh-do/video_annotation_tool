@@ -47,27 +47,33 @@ export function decodeBarcode(luma: readonly number[]): number | null {
 }
 
 /**
- * The frame index the <video> matching `selector` currently shows, read from its barcode; null if
- * unreadable.
+ * The frame index shown by the <video> matching `selector`, or by a <canvas> holding a scaled-down
+ * copy of a frame (a filmstrip thumbnail); null if unreadable.
  */
 export async function shownFrame(page: Page, selector: string): Promise<number | null> {
   // The page can't import decodeBarcode, so it only samples the pixels and Node decodes them.
   const luma = await page.evaluate(
-    ([css, pixels]) => {
-      const video = document.querySelector<HTMLVideoElement>(css);
-      if (!video?.videoWidth) return null;
+    ([css, pixels, fullWidth]) => {
+      const source = document.querySelector<HTMLVideoElement | HTMLCanvasElement>(css);
+      if (!source) return null;
+      const isVideo = source instanceof HTMLVideoElement;
+      const width = isVideo ? source.videoWidth : source.width;
+      const height = isVideo ? source.videoHeight : source.height;
+      if (!width) return null;
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      canvas.width = width;
+      canvas.height = height;
       const context = canvas.getContext('2d', { willReadFrequently: true })!;
-      context.drawImage(video, 0, 0);
-      const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+      context.drawImage(source, 0, 0);
+      const { data } = context.getImageData(0, 0, width, height);
+      // A thumbnail is a whole frame scaled down; the barcode spans a full frame's width.
+      const scale = width / fullWidth;
       return pixels.map(([x, y]) => {
-        const i = 4 * (y * canvas.width + x);
+        const i = 4 * (Math.floor(y * scale) * width + Math.floor(x * scale));
         return 0.299 * data[i]! + 0.587 * data[i + 1]! + 0.114 * data[i + 2]!;
       });
     },
-    [selector, BARCODE_PIXELS] as const,
+    [selector, BARCODE_PIXELS, BARCODE_WIDTH] as const,
   );
   return luma === null ? null : decodeBarcode(luma);
 }

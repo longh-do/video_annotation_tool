@@ -78,7 +78,7 @@ describe('editor', () => {
     const marked = run([{ type: 'mark', frame: 10, state: 'keep', origin: 'paused' }]);
     const dragged = run(
       [
-        { type: 'drag-start' },
+        { type: 'drag-start', index: 0 },
         { type: 'move', index: 0, frame: 14, origin: 'drag' },
         { type: 'move', index: 0, frame: 18, origin: 'drag' },
         { type: 'drag-end' },
@@ -90,7 +90,7 @@ describe('editor', () => {
     expect(dragged.history.past).toHaveLength(marked.history.past.length + 1);
     const back = run(
       [
-        { type: 'drag-start' },
+        { type: 'drag-start', index: 0 },
         { type: 'move', index: 0, frame: 14, origin: 'drag' },
         { type: 'move', index: 0, frame: 10, origin: 'drag' },
         { type: 'drag-end' },
@@ -99,6 +99,28 @@ describe('editor', () => {
     );
     expect(back.history.past).toHaveLength(marked.history.past.length);
     expect(back.edits).toBe(marked.edits);
+  });
+
+  test('grabbing a handle selects it; Escape puts the boundary back and keeps it selected', () => {
+    const marked = run([
+      { type: 'mark', frame: 10, state: 'keep', origin: 'live' },
+      { type: 'mark', frame: 30, state: 'cut', origin: 'live' },
+    ]);
+    const dragging = run(
+      [
+        { type: 'drag-start', index: 0 },
+        { type: 'move', index: 0, frame: 16, origin: 'drag' },
+      ],
+      marked,
+    );
+    expect(dragging.selected).toBe(16);
+    expect(dragging.anchor).toBe(10);
+    const cancelled = editorReducer(dragging, { type: 'drag-cancel' });
+    expect(cancelled.history.present).toBe(marked.history.present);
+    expect(cancelled.selected).toBe(10);
+    expect(cancelled.edits).toBe(marked.edits);
+    expect(editorReducer(cancelled, { type: 'drag-cancel' })).toBe(cancelled);
+    expect(editorReducer(cancelled, { type: 'drag-end' })).toBe(cancelled);
   });
 
   test('an outcome stands only for the timeline it was given for', () => {
@@ -143,5 +165,26 @@ describe('editor', () => {
     ]);
     expect(state.history.present.boundaries[0]?.checked).toBe(true);
     expect(state.selected).toBe(10);
+  });
+
+  test('the anchor stays where work on a boundary began while it moves, and resets on a new one', () => {
+    let state = run([
+      { type: 'mark', frame: 10, state: 'keep', origin: 'live' },
+      { type: 'mark', frame: 50, state: 'cut', origin: 'live' },
+    ]);
+    expect(state).toMatchObject({ selected: 50, anchor: 50 });
+    state = run(
+      [
+        { type: 'nudge', delta: -3, now: 0 },
+        { type: 'move', index: 1, frame: 44, origin: 'placed' },
+      ],
+      state,
+    );
+    expect(state).toMatchObject({ selected: 44, anchor: 50 });
+    state = editorReducer(state, { type: 'select', frame: 10 });
+    expect(state).toMatchObject({ selected: 10, anchor: 10 });
+    // Moving a boundary that wasn't selected anchors it where it was.
+    state = editorReducer(state, { type: 'move', index: 1, frame: 40, origin: 'drag' });
+    expect(state).toMatchObject({ selected: 40, anchor: 44 });
   });
 });
