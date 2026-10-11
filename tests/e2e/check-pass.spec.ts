@@ -95,9 +95,6 @@ test('keyboard only: mark at 2×, then the check pass puts each rough mark on it
   await page.keyboard.press('Enter');
   await expectShown(page, start!.frame);
   await expect(page.locator('.thumb-mark')).toHaveText('your mark');
-  await expect(page.locator('.filmstrip legend')).toContainText(
-    'Click the frame where the task really starts',
-  );
   await expect(page.locator('.thumb-boundary')).toHaveCount(1);
 
   // ← steps through exact frames; , nudges the boundary a frame earlier and shows it.

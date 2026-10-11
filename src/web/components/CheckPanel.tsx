@@ -96,7 +96,6 @@ export function CheckPanel(props: CheckPanelProps) {
           frames={frames}
           anchor={anchor}
           boundary={selected}
-          state={boundary?.state ?? 'keep'}
           onPick={props.onPick}
         />
       )}

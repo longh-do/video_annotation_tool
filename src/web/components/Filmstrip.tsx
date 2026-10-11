@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { filmstripFrames } from '../../core/check.ts';
 import { type FrameMap, frameNs } from '../../core/frame-map.ts';
 import { durationSeconds } from '../../core/ns.ts';
-import type { State } from '../../core/timeline.ts';
 import type { FrameGrabber } from '../player/frame-grabber.ts';
 
 /** Where the filmstrip's pictures come from: the camera shown big. */
@@ -21,8 +20,6 @@ interface FilmstripProps {
   readonly anchor: number;
   /** Where the boundary is now. */
   readonly boundary: number;
-  /** Whether the boundary starts the task (keep) or stops it (cut). */
-  readonly state: State;
   readonly onPick: (frame: number) => void;
 }
 
@@ -32,7 +29,7 @@ interface FilmstripProps {
  * the head camera's frames, which marks are saved on; the pictures come from the camera shown
  * big. Key it by camera and `anchor`: each strip starts empty.
  */
-export function Filmstrip({ pictures, frames, anchor, boundary, state, onPick }: FilmstripProps) {
+export function Filmstrip({ pictures, frames, anchor, boundary, onPick }: FilmstripProps) {
   const { grabber, pictureOf } = pictures;
   const strip = useMemo(() => filmstripFrames(frames, anchor), [frames, anchor]);
   const [bitmaps, setBitmaps] = useState<ReadonlyMap<number, ImageBitmap>>(new Map());
@@ -60,14 +57,10 @@ export function Filmstrip({ pictures, frames, anchor, boundary, state, onPick }:
     const seconds = durationSeconds(frameNs(frames, frame) - frameNs(frames, anchor));
     return `${seconds > 0 ? '+' : '−'}${Math.abs(seconds).toFixed(2)} s`;
   };
-  const [verb, noun] = state === 'keep' ? ['starts', 'start'] : ['stops', 'stop'];
 
   return (
     <fieldset className="filmstrip">
-      <legend>
-        Click the frame where the task really {verb}: the {noun} moves there. Frames from 1.5 s
-        before your mark to 0.5 s after, from the {pictures.camera} camera.
-      </legend>
+      <legend>Frames around the mark, from the {pictures.camera} camera</legend>
       <div className="filmstrip-frames">
         {strip.map((frame) => (
           <button
