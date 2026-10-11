@@ -127,7 +127,6 @@ describe('API', () => {
     const res = await fetch(`${base}/api/tasks/stack-cups`);
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(res.headers.get('etag')).toBe(`"${taskVersion}"`);
     expect(await json<GuideResponse>(res)).toEqual({
       info: { id: 'stack-cups', title: 'Stack the cups', version: taskVersion },
       markdown: '# Stack the cups\n\nKeep from the first touch.\n',
@@ -201,83 +200,15 @@ describe('API', () => {
     }
   });
 
-  test('anyone can edit a guide through the API: the header stays, a stale edit is refused', async () => {
+  test('a guide whose heading was deleted is titled by its file name, not the old heading', async () => {
     const path = join(root, 'tasks', 'stack-cups.md');
     const before = await readFile(path, 'utf8');
-    const edit = (headers: Record<string, string>, payload: unknown, id = 'stack-cups') =>
-      fetch(`${base}/api/tasks/${id}`, { method: 'PUT', headers, body: JSON.stringify(payload) });
     try {
-      const current = await fetch(`${base}/api/tasks/stack-cups`);
-      const version = current.headers.get('etag') ?? '';
-      expect(version).toBe(`"${taskVersion}"`);
-      expect((await edit({}, { markdown: '# Cups\n' })).status).toBe(428);
-      expect((await edit({ 'If-Match': version }, { markdown: ' \n' })).status).toBe(400);
-      expect((await edit({ 'If-Match': version }, { text: '# Cups\n' })).status).toBe(400);
-      expect((await edit({ 'If-Match': version }, { markdown: '# Cups\n' }, 'nope')).status).toBe(
-        404,
-      );
-
-      const res = await edit(
-        { 'If-Match': version },
-        { markdown: '# Stack the cups\n\nKeep all.' },
-      );
-      expect(res.status).toBe(200);
-      const saved = await json<GuideResponse>(res);
-      expect(saved.info).toMatchObject({ id: 'stack-cups', title: 'Stack the cups' });
-      expect(saved.info.version).not.toBe(taskVersion);
-      expect(saved.markdown).toBe('# Stack the cups\n\nKeep all.\n');
-      expect(res.headers.get('etag')).toBe(`"${saved.info.version}"`);
-      expect(await readFile(path, 'utf8')).toBe(
-        '---\nrecordings: rec-a, rec-b\n---\n\n# Stack the cups\n\nKeep all.\n',
-      );
-      // Everyone gets the new text at once, and saves are stamped with its version.
-      expect(await json<GuideResponse>(fetch(`${base}/api/tasks/stack-cups`))).toEqual(saved);
-      const recording = await json<RecordingResponse>(fetch(`${base}/api/recordings/rec-b`));
-      expect(recording.task).toEqual(saved.info);
-
-      // An edit of the version before is refused and names the version there is now.
-      const stale = await edit({ 'If-Match': version }, { markdown: '# Mine\n' });
-      expect(stale.status).toBe(412);
-      expect(await stale.json()).toEqual({ version: saved.info.version });
-      expect(await readFile(path, 'utf8')).toContain('Keep all.');
-
-      // Without a heading, the title is the file name, never the heading that was deleted.
-      const untitled = await edit({ 'If-Match': `"${saved.info.version}"` }, { markdown: 'Keep.' });
-      expect((await json<GuideResponse>(untitled)).info.title).toBe('stack-cups.md');
+      await writeFile(path, '---\nrecordings: rec-a, rec-b\n---\n\nKeep.\n');
+      const guide = await json<GuideResponse>(fetch(`${base}/api/tasks/stack-cups`));
+      expect(guide.info.title).toBe('stack-cups.md');
     } finally {
       await writeFile(path, before);
-    }
-  });
-
-  test('two edits of the same version at once: one is saved, the other refused', async () => {
-    const path = join(root, 'tasks', 'stack-cups.md');
-    const before = await readFile(path, 'utf8');
-    const edit = (markdown: string) =>
-      fetch(`${base}/api/tasks/stack-cups`, {
-        method: 'PUT',
-        headers: { 'If-Match': `"${taskVersion}"` },
-        body: JSON.stringify({ markdown }),
-      });
-    try {
-      const statuses = (await Promise.all([edit('# One\n'), edit('# Two\n')])).map((r) => r.status);
-      expect(statuses.sort()).toEqual([200, 412]);
-    } finally {
-      await writeFile(path, before);
-    }
-  });
-
-  test('editing a guide whose file is gone answers 404', async () => {
-    const path = join(root, 'tasks', 'stack-cups.md');
-    await rename(path, `${path}.away`);
-    try {
-      const res = await fetch(`${base}/api/tasks/stack-cups`, {
-        method: 'PUT',
-        headers: { 'If-Match': `"${taskVersion}"` },
-        body: JSON.stringify({ markdown: '# Cups\n' }),
-      });
-      expect(res.status).toBe(404);
-    } finally {
-      await rename(`${path}.away`, path);
     }
   });
 

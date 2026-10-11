@@ -1,15 +1,9 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import type { TaskGuide } from '../../src/server/catalog.ts';
-import {
-  editGuide,
-  guideMarkdown,
-  readTaskGuides,
-  tasksCovering,
-  withMarkdown,
-} from '../../src/server/task-guides.ts';
+import { guideMarkdown, readTaskGuides, tasksCovering } from '../../src/server/task-guides.ts';
 import { tempDir } from './fixtures.ts';
 
 /** Writes the files into a new folder and reads the guides in it. */
@@ -94,37 +88,5 @@ describe('task guides', () => {
     const text = '---\r\nrecordings: a\r\n---\r\n\r\n\r\n# Cups\r\n\r\nKeep it.\r\n';
     expect(guideMarkdown(text)).toBe('# Cups\n\nKeep it.\n');
     expect(guideMarkdown('# No header\n')).toBe('# No header\n');
-  });
-
-  test('an edit replaces the Markdown and keeps the header as it was written', () => {
-    const text = '---\nrecordings: kitchen-*,  lab-2-*\n---\n\n# Old\n\nOld text.\n';
-    expect(withMarkdown(text, '\n# New\n\nNew text.\n\n', ['ignored'])).toBe(
-      '---\nrecordings: kitchen-*,  lab-2-*\n---\n\n# New\n\nNew text.\n',
-    );
-    // A file that lost its header gets one back, naming the recordings it was matched with.
-    expect(withMarkdown('# Old\n', '# New', ['kitchen-*', 'lab-2-*'])).toBe(
-      '---\nrecordings: kitchen-*, lab-2-*\n---\n\n# New\n',
-    );
-    // Written with \n line ends, as the edit box gives them.
-    expect(withMarkdown('---\r\nrecordings: a\r\n---\r\n\r\n# Old\r\n', '# New', [])).toBe(
-      '---\nrecordings: a\n---\n\n# New\n',
-    );
-  });
-
-  test('an edit is written only on top of the version it started from', async () => {
-    const text = '---\nrecordings: cups-*\n---\n\n# Cups\n';
-    const { tasks } = await read({ 'cups.md': text });
-    const guide = tasks.get('cups') as TaskGuide;
-    expect(await editGuide(guide, 'sha256:stale', '# Mine\n')).toEqual({
-      saved: false,
-      version: guide.version,
-    });
-    expect(await readFile(guide.path, 'utf8')).toBe(text);
-    const edited = '---\nrecordings: cups-*\n---\n\n# Cups\n\nKeep every cup.\n';
-    expect(await editGuide(guide, guide.version, '# Cups\n\nKeep every cup.')).toEqual({
-      saved: true,
-      text: edited,
-    });
-    expect(await readFile(guide.path, 'utf8')).toBe(edited);
   });
 });

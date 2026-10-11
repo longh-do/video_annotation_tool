@@ -58,17 +58,9 @@ export const saveAnnotation = (
     keepalive,
   });
 
-/** A task's guide as it is now; its version is the one to name when saving an edit of it. */
+/** A task's guide as it is now, so an edit of its file shows on the next load. */
 export const fetchGuide = (id: string) =>
   request<GuideResponse>(`/api/tasks/${encodeURIComponent(id)}`);
-
-/** Saves an edit of a task's guide on top of `version`; a stale version fails with ApiError 412. */
-export const saveGuide = (id: string, version: string, markdown: string) =>
-  request<GuideResponse>(`/api/tasks/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'If-Match': `"${version}"` },
-    body: JSON.stringify({ markdown }),
-  });
 
 export async function fetchText(url: string): Promise<string> {
   const response = await fetch(url);

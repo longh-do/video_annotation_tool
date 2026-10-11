@@ -3,10 +3,8 @@
  *
  *   GET  /api/queue                 recordings in queue order with their save status
  *   GET  /api/recordings/:id        cameras, media URLs, thumbnails, task
- *   GET  /api/tasks/:id             a task's guide as it is now (markdown without its header, title,
- *                                   version); ETag = version
- *   PUT  /api/tasks/:id             edit it: {"markdown"}; If-Match must name the version edited
- *   GET  /api/annotations/:id       the saved annotation and sidecar; ETag = revision
+ *   GET  /api/tasks/:id             a task's guide as it is now: title, version, markdown (no header)
+ *   GET  /api/annotations/:id      the saved annotation and sidecar; ETag = revision
  *   PUT  /api/annotations/:id       save; If-Match must name the revision that was edited
  *   POST /api/events                append a batch of telemetry events
  *   GET  /media/:id/<file>          videos, frames CSVs and thumbnail sheets, with byte ranges
@@ -37,7 +35,7 @@ import { type AnnotationStore, RevisionConflict, type Stamp } from './annotation
 import { type Catalog, type Recording, referenceCamera, type TaskGuide } from './catalog.ts';
 import { HttpError, readJson, sendJson } from './http.ts';
 import { sendFile } from './media.ts';
-import { editGuide, guideMarkdown, guideTitle, guideVersion } from './task-guides.ts';
+import { guideMarkdown, guideTitle, guideVersion } from './task-guides.ts';
 import type { TelemetryLog } from './telemetry.ts';
 
 export interface ApiOptions {
@@ -139,29 +137,7 @@ export function createApi(options: ApiOptions): Handler {
   const taskGuide: Route = async (_req, res, [id = '']) => {
     const guide = tasks.has(id) ? await guideNow(id) : null;
     if (!guide) throw new HttpError(404, `no task ${id}`);
-    sendJson(res, 200, guide, { ETag: `"${guide.info.version}"` });
-  };
-
-  /** Anyone may edit a guide; an edit based on an older version is refused, as for saves. */
-  const putTaskGuide: Route = async (req, res, [id = '']) => {
-    const guide = tasks.get(id);
-    if (!guide) throw new HttpError(404, `no task ${id}`);
-    const base = /^"(.+)"$/.exec(req.headers['if-match'] ?? '')?.[1];
-    if (base === undefined) throw new HttpError(428, 'send If-Match with the version you edited');
-    const { markdown } = ((await readJson(req)) ?? {}) as { markdown?: unknown };
-    if (typeof markdown !== 'string' || markdown.trim() === '') {
-      throw new HttpError(400, 'send the new text as {"markdown": "…"}; it cannot be empty');
-    }
-    const edit = await editGuide(guide, base, markdown).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT')
-        throw new HttpError(404, `the guide of ${id} is missing on disk`);
-      throw error;
-    });
-    if (!edit.saved) {
-      throw new HttpError(412, 'the guide changed since it was opened', { version: edit.version });
-    }
-    const saved = guideFrom(id, guide, edit.text);
-    sendJson(res, 200, saved, { ETag: `"${saved.info.version}"` });
+    sendJson(res, 200, guide);
   };
 
   const getAnnotation: Route = async (_req, res, [id]) => {
@@ -249,7 +225,6 @@ export function createApi(options: ApiOptions): Handler {
     ['GET', /^\/api\/queue$/, queue],
     ['GET', /^\/api\/recordings\/([^/]+)$/, recording],
     ['GET', /^\/api\/tasks\/([^/]+)$/, taskGuide],
-    ['PUT', /^\/api\/tasks\/([^/]+)$/, putTaskGuide],
     ['GET', /^\/api\/annotations\/([^/]+)$/, getAnnotation],
     ['PUT', /^\/api\/annotations\/([^/]+)$/, putAnnotation],
     ['POST', /^\/api\/events$/, postEvents],

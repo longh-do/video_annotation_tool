@@ -1,6 +1,6 @@
 /**
  * The web server for the end-to-end tests: the synthetic recordings, freshly ingested, served by
- * the real server on port 5174 with no annotations or telemetry left from earlier runs.
+ * the real server on E2E_PORT with no annotations or telemetry left from earlier runs.
  *
  *   node tests/e2e/serve.ts
  */
@@ -9,6 +9,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { findMediaTools } from '../../src/server/ffmpeg.ts';
 import { ingest } from '../../src/server/ingest.ts';
+import { E2E_PORT } from './port.ts';
 import { E2E_DIR, writeSyntheticRecordings } from './synthetic.ts';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -53,7 +54,7 @@ await rm(TELEMETRY, { recursive: true, force: true });
 const server = spawn(
   process.execPath,
   [
-    ...[join(ROOT, 'src/server/main.ts'), '--dev', '--port', '5174'],
+    ...[join(ROOT, 'src/server/main.ts'), '--dev', '--port', String(E2E_PORT)],
     ...['--catalog', join(DERIVED, 'catalog.json'), '--annotations', ANNOTATIONS],
     ...['--telemetry', join(TELEMETRY, 'events.jsonl')],
   ],

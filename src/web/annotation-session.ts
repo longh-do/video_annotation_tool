@@ -158,8 +158,8 @@ export class AnnotationSession {
   }
 
   /**
-   * The version of the task's guide on screen now. It changes when someone edits the guide, here
-   * or since the recording was loaded; events from then on carry the new one.
+   * The version of the task's guide on screen now: its file may have been edited since the
+   * recording was loaded. Events from then on carry the new one.
    */
   noteGuide(version: string): void {
     if (version === this.#guidelineVersion) return;

@@ -297,8 +297,7 @@ export function chordLabel(chord: Chord): string {
   return `${shift}${mod}${key}`;
 }
 
-/** Whether a key goes into a text field, where it is text and never a command. */
-export function isTyping(target: EventTarget | null): boolean {
+function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable || target instanceof HTMLTextAreaElement) return true;
   if (target instanceof HTMLSelectElement) return true;

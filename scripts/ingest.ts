@@ -5,9 +5,8 @@
  *   pnpm ingest <data folder> [--tasks <folder>] [--out derived]
  *
  * Task guides, one Markdown file per task (see docs/task-guide-template.md), are read from this
- * repository's `tasks/` folder, where anyone can read and edit them; --tasks reads them from
- * another folder instead. Without any, annotators see no task guide. Exits non-zero if a recording
- * was rejected or none was found.
+ * repository's `tasks/` folder; --tasks reads them from another folder instead. Without any,
+ * annotators see no task guide. Exits non-zero if a recording was rejected or none was found.
  */
 import { stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';

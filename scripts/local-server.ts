@@ -1,5 +1,5 @@
 /**
- * The app's server for a script (pnpm perf, pnpm demo): the production build on a port of its own
+ * The app's server for a script (pnpm perf): the production build on a port of its own
  * and a scratch annotations folder, so real work is never touched. It refuses a port already in
  * use, notices a server that dies while starting, and `stop` always cleans up.
  */

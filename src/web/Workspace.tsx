@@ -100,7 +100,7 @@ export function Workspace(props: WorkspaceProps) {
   const [view] = useState(() => new TimelineView(timelineEndUs(frames)));
   const seekFailed = usePlayer(player, (s) => s.seekFailed);
   const [showCommands, setShowCommands] = useState(false);
-  /** The recording's task as its guide is now; the Task tab reads it, and edits can rename it. */
+  /** The recording's task as its guide is now: the Task tab reads the guide's file again. */
   const [task, setTask] = useState(info.task);
   /** An outcome waiting for a confirmation or a reason. */
   const [asking, setAsking] = useState<Question | null>(null);
