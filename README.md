@@ -2,13 +2,13 @@
 
 A browser tool for marking which parts of untrimmed, multi-camera robot recordings to **keep**, fast and frame-exact.
 
-Annotators watch at 2× and press **S** (or click **Start**) where a task starts and **D** (**Stop**) where it stops. Marks made while the video plays land late by the annotator's reaction time, so they show as *needs check* and a short **check pass** visits each of them: the video stops on the mark, and `,` `.` (or a drag on the zoomed-in timeline) put it on the exact frame. **⌘↵** (or **Submit**) saves and the next recording, already fetched, opens at once. Each recording produces one JSON file of kept intervals in source-clock nanoseconds, so the same cuts apply to every synchronized stream.
+Annotators watch at 2× and press **S** (or click **Start**) where a task starts and **D** (**Stop**) where it stops. Marks made while the video plays land late by the annotator's reaction time, so they show as *needs check* and a **check pass** visits each of them: the video stops on the mark, and `,` `.` (or a drag on the zoomed-in timeline) put it on the exact frame. **⌘↵** (or **Submit**) saves and the next recording, already fetched, opens at once. Each recording produces one JSON file of kept intervals in source-clock nanoseconds, so the same cuts apply to every synchronized stream.
 
 ![The tool on a synthetic test clip, during the check pass](docs/screenshot.png)
 
 *A synthetic test clip (the tests' own footage): the head camera large with the two gripper cameras beside it, the kept intervals on the right; below, the check pass, the transport row and the timeline, kept intervals in yellow.*
 
-Why this design, in short: keystrokes at speed instead of Start/Stop buttons (a key press costs ~0.3 s and the eyes stay on the video), keys that **set** a state rather than toggle it (a double press changes nothing, so one slip never inverts the rest of the recording), and precision moved into a separate, cheap pass instead of watching at 1× with the mouse. The reasoning and the measured numbers are in [docs/design.md](docs/design.md).
+Why this design, in short: keystrokes at speed instead of Start/Stop buttons (a key press costs ~0.3 s and the eyes stay on the video), keys that **set** a state rather than toggle it (a double press changes nothing, so one slip never inverts the rest of the recording), and precision moved into a separate pass instead of watching at 1× with the mouse. The reasoning and the estimates behind it are in [docs/design.md](docs/design.md); the speed gains are still to be measured.
 
 ## Quickstart
 
@@ -20,7 +20,7 @@ pnpm ingest ~/Downloads/recordings   # checks every recording, builds thumbnails
 pnpm dev                                                            # then open http://127.0.0.1:5173
 ```
 
-`pnpm ingest` takes the folder holding the downloads: each recording is a folder with `manifest.json`, the `*-frames.csv` files and `videos/` (the frames and manifest may also sit in an `annotation-data/` folder beside `videos/`). The recordings in it are never modified; ingest writes `derived/catalog.json` and reports any recording it rejects. Annotations are saved in `annotations/`, telemetry in `telemetry/events.jsonl`. For a production build: `pnpm build && pnpm start`.
+`pnpm ingest` takes the folder holding the downloads: each recording is a folder with `manifest.json`, the `*-frames.csv` files and `videos/` (the frames and manifest may also sit in an `annotation-data/` folder beside `videos/`). The recordings in it are never modified; ingest writes `derived/catalog.json` and reports any recording it rejects. Annotations are saved in `annotations/`, telemetry in `telemetry/events.jsonl`. Who is annotating is set with `--annotator <id>` (e.g. `pnpm dev --annotator ana`; default `local`) and recorded with every save and every telemetry event. For a production build: `pnpm build && pnpm start`.
 
 **Task guides** are Markdown files in [`tasks/`](tasks), one per task: what to keep and how to tell where it starts and stops. Here they are the two tasks of the example recordings, [cloth folding](tasks/cloth-folding.md) and [cable plugging](tasks/cable-plugging.md). A short header lists the recordings each guide covers (`recordings: 2026-10-09--*`), and the tool shows the matching guide in the Task tab and stamps its version on every save. To change a task's rules, edit `tasks/<task>.md` and reload; re-run `pnpm ingest` only if you change its `recordings:` line (`--tasks <folder>` reads the guides from another folder). Annotators read the guides in the app but can't change them. [docs/task-guide-template.md](docs/task-guide-template.md) shows how to write a new one. How to use the tool itself is in the Guide tab, written in [src/web/guide.md](src/web/guide.md).
 
@@ -61,7 +61,7 @@ On a Windows or Linux keyboard ⌘ is Ctrl. Everything but the 6× skim also wor
 ```
 
 - Times are the reference camera's `source_ts_ns` as decimal strings (they are never JavaScript numbers anywhere in the code). Intervals are `[start, stop)`: `start_ns` is the first kept frame, `end_ns` the first frame not kept, or the last frame plus 1 ns when an interval runs to the end of the video.
-- `status` is `complete`, or `needs_review` with the reason and note in `notes`; `not_reviewed` while it is a draft (autosaved). "No useful task" is `complete` with no intervals.
+- `status` is `complete`, or `needs_review` with the reason and note in `notes`; `not_reviewed` while it is a draft (autosaved). "No useful task" is `complete` with no intervals. **Submit anyway** saves `complete` even with live marks never checked; the sidecar lists them as unchecked.
 - Beside it, `<recording_id>.meta.json` keeps what the contract doesn't: every boundary with how it was set and whether it was checked, where to resume, effort (active and wall time, edits, undos), the revision and who saved it with which version of the task guide. `annotations/.history/<recording_id>/` keeps every saved revision.
 
 ## Measuring speed without losing accuracy
@@ -80,7 +80,7 @@ prints, per recording: start and stop error in frames (median, p90 and signed bi
 pnpm lint                 # Biome, a lint rule that keeps nanoseconds out of Numbers, and TypeScript
 pnpm test                 # unit and property tests (fast-check)
 pnpm test:e2e             # Playwright in Chrome on generated clips whose frames show their index
-pnpm build && pnpm perf   # the longest real recording, 320 boundaries, 2×: must draw at 60 fps
+pnpm build && pnpm perf   # the longest real recording, 320 test boundaries, 2×: must draw at 60 fps
 ```
 
 The end-to-end tests need ffmpeg: they generate small variable-frame-rate clips in which every frame carries its index as a barcode, so a test can check which frame the browser really shows. No company data is in the repository; with `RECORDINGS_DIR` set to the downloads folder, `pnpm test` also checks ingest and timestamps on the real recordings.
@@ -88,7 +88,7 @@ The end-to-end tests need ffmpeg: they generate small variable-frame-rate clips 
 ## Limitations
 
 - Marking needs Chrome or Edge: only they report each presented video frame reliably. Other browsers can watch.
-- A mark made during playback is the last frame the browser reported showing; it trails the picture by 0–3 frames (measured). That is why live marks *need a check* and the check pass exists; marks made while paused are exact.
+- A mark made during playback is the last frame the browser reported showing: in test runs it was up to 3 frames behind the picture, never ahead (the end-to-end test allows up to 5). That is why live marks *need a check* and the check pass exists; marks made while paused are exact.
 - Single-part camera videos only (none of the recordings has more); the data model already supports parts.
 - One local annotator per server: leases, review queues and dashboards are described in [docs/scaling.md](docs/scaling.md), not built.
 - No automatic start/stop detection or suggestions, by request: annotators decide from the video, following the task's guide ([template](docs/task-guide-template.md)).

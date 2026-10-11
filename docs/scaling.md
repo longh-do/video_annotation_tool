@@ -17,7 +17,7 @@ Accepted media-hours per day ≈ annotators × on-task hours × (1 − QA share)
 | Active real-time factor (assumed) | 1.2 | 0.7 |
 | 100 annotators, 6.5 h on task, 20% QA | ≈ 430 media-hours/day | ≈ 740 media-hours/day |
 
-The seconds per checked boundary decide where between those numbers the long, boundary-dense sessions land, so the pilot measures that first.
+The 0.7 roughly fits short recordings with few boundaries. On boundary-dense sessions the seconds per checked boundary decide the factor: at an estimated 5–8 s per check the 42-minute session comes to about 1.1–1.5 ([design](design.md)), so the pilot measures that first.
 
 ## Workflow
 
@@ -25,7 +25,7 @@ The seconds per checked boundary decide where between those numbers the long, bo
 
 - A lease gives one recording to one annotator; an expired lease never discards a draft (drafts are already saved with revisions, and the journal covers the browser side).
 - `needs_review` never blocks the queue: a collection problem goes back to the collection team, an unclear boundary to a reviewer.
-- Long recordings stay with one owner, resumed where they left off, so conventions stay consistent. Only sessions over 20–30 minutes are split, into ~10-minute chunks cut inside idle gaps with 30–60 s of overlap.
+- Long recordings stay with one owner, resumed where they left off, so conventions stay consistent: the 42-minute session goes to one annotator, in two blocks (see Shifts). A recording over 20–30 minutes is split across annotators only when it is needed sooner than one person can finish it, into ~10-minute chunks cut inside idle gaps with 30–60 s of overlap.
 
 ## Quality
 
@@ -42,7 +42,7 @@ Steady-state QA costs about 20% of capacity. Pass/fail thresholds are per-task Q
 ## People
 
 - **Onboarding (~1.5–2 h):** keys from the first minute, with the Guide tab and the command menu (⌘K) to look them up; about eight ten-minute drills on gold clips with feedback, to a 90% criterion; a joint discussion of the first 6–12 recordings against the task's guideline; then covert gold, full review of the first 20–30 tasks and a weekly calibration with a guideline changelog. Accuracy on the first five tasks predicts long-run accuracy well, so that is where coaching pays.
-- **Shifts:** 30–45-minute marking blocks, a break of at least 10 minutes every ~90 minutes, a warm-up gold clip per block, shifts of at most 8 hours; the 42-minute session runs as two blocks split at a head-turn gap. Drift is tracked by time in block (signed bias, keep fraction, missed short intervals), never by speed alone.
+- **Shifts:** 30–45-minute marking blocks, a break of at least 10 minutes every ~90 minutes, a warm-up gold clip per block, shifts of at most 8 hours; the 42-minute session runs as two blocks for the same annotator, with the break at a head-turn gap. Drift is tracked by time in block (signed bias, keep fraction, missed short intervals), never by speed alone.
 - **Teams:** pods of about 12 annotators with a reviewer-lead; hourly pay with a quality-gated bonus.
 
 ## Architecture
@@ -56,4 +56,4 @@ Steady-state QA costs about 20% of capacity. Pass/fail thresholds are per-task Q
 | `telemetry/events.jsonl` | an event pipeline into a warehouse for the KPIs above |
 | — | a review mode of the same screen: Accept, Fix & accept, Return |
 
-The browser side would not change much: it already saves through a revisioned API, journals unsaved work, prefetches the next recording and logs the events the KPIs need. The annotator id, today a server flag, would come from sign-in.
+The browser side would not change much: it already saves through a revisioned API, journals unsaved work, prefetches the next recording and logs the events the KPIs need. The annotator id, today the server's `--annotator` flag, would come from sign-in.
