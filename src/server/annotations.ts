@@ -11,12 +11,12 @@
  * written first and holds both files, so it is what loads read: a crash between the later writes
  * can't pair one revision's contract file with another's sidecar.
  */
-import { randomUUID } from 'node:crypto';
-import { mkdir, open, readdir, readFile, rename } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { AnnotationFile, Sidecar, SidecarDraft } from '../core/annotation.ts';
 import type { SavedAnnotation } from '../core/api-types.ts';
 import { isSafeRecordingId } from './catalog.ts';
+import { oneAtATime, writeFileAtomic } from './files.ts';
 
 /** What the server vouches for on every save, whatever the client sent. */
 export interface Stamp {
@@ -40,7 +40,8 @@ interface HistoryRecord {
 
 export class AnnotationStore {
   readonly #dir: string;
-  readonly #queues = new Map<string, Promise<unknown>>();
+  /** One operation at a time per recording, so a load never sees half a save. */
+  readonly #serialize = oneAtATime();
 
   constructor(dir: string) {
     this.#dir = dir;
@@ -108,16 +109,6 @@ export class AnnotationStore {
   #historyPath(id: string, revision: number): string {
     return join(this.#dir, '.history', safe(id), `${revision}.json`);
   }
-
-  /** One operation at a time per recording, so a load never sees half a save. */
-  #serialize<T>(id: string, task: () => Promise<T>): Promise<T> {
-    const result = (this.#queues.get(id) ?? Promise.resolve()).then(task);
-    this.#queues.set(
-      id,
-      result.catch(() => {}),
-    );
-    return result;
-  }
 }
 
 function safe(id: string): string {
@@ -134,22 +125,6 @@ async function readJsonFile<T>(path: string): Promise<T | null> {
   }
 }
 
-async function writeAtomic(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const temp = `${path}.${randomUUID()}.tmp`;
-  const file = await open(temp, 'w');
-  try {
-    await file.writeFile(`${JSON.stringify(value, null, 2)}\n`);
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-  await rename(temp, path);
-  // Flush the directory too, so the rename itself survives a crash.
-  const dir = await open(dirname(path), 'r');
-  try {
-    await dir.sync();
-  } finally {
-    await dir.close();
-  }
+function writeAtomic(path: string, value: unknown): Promise<void> {
+  return writeFileAtomic(path, `${JSON.stringify(value, null, 2)}\n`);
 }

@@ -4,10 +4,10 @@
  *
  *   pnpm ingest <data folder> [--tasks <folder>] [--out derived]
  *
- * Task guides, one Markdown file per task (see docs/task-guide-template.md), are read from a
- * `tasks/` folder inside the data folder, so whoever sets up a batch puts them next to its
- * recordings; --tasks reads them from another folder instead. Without any, annotators see no task
- * guide. Exits non-zero if a recording was rejected or none was found.
+ * Task guides, one Markdown file per task (see docs/task-guide-template.md), are read from this
+ * repository's `tasks/` folder, where anyone can read and edit them; --tasks reads them from
+ * another folder instead. Without any, annotators see no task guide. Exits non-zero if a recording
+ * was rejected or none was found.
  */
 import { stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -33,14 +33,14 @@ if (values.tasks !== undefined && !(await isFolder(values.tasks))) {
   console.error(`--tasks ${values.tasks} is not a folder`);
   process.exit(2);
 }
-const besideRecordings = join(dataDir, 'tasks');
-const tasksDir = values.tasks ?? ((await isFolder(besideRecordings)) ? besideRecordings : null);
+const inRepo = join(import.meta.dirname, '..', 'tasks');
+const tasksDir = values.tasks ?? ((await isFolder(inRepo)) ? inRepo : null);
 if (tasksDir === null) {
   console.warn(
-    `! no task guides: put them in ${besideRecordings} or pass --tasks <folder>; annotators will see none`,
+    `! no task guides: put them in ${relative(process.cwd(), inRepo)} or pass --tasks <folder>; annotators will see none`,
   );
 } else {
-  console.log(`task guides from ${tasksDir}`);
+  console.log(`task guides from ${relative(process.cwd(), tasksDir) || '.'}`);
 }
 const tools = await findMediaTools();
 if (!tools) console.warn('! ffmpeg not found: skipping the video timestamp check and thumbnails');

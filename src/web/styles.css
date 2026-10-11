@@ -685,6 +685,47 @@ button.check-warning {
   color: var(--accent);
 }
 
+/* Anyone can edit a task's guide, in the Task tab. */
+.guide-edit {
+  float: right;
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+.guide-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.guide-editor textarea {
+  flex: 1;
+  min-height: 240px;
+  box-sizing: border-box;
+  padding: 8px;
+  resize: none;
+  font:
+    12px / 1.5 ui-monospace,
+    monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.guide-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.guide-problem {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
 /* Keys in a guide, written as `code`, look like keys. */
 .guideline code {
   font:

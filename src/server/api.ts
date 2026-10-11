@@ -3,7 +3,9 @@
  *
  *   GET  /api/queue                 recordings in queue order with their save status
  *   GET  /api/recordings/:id        cameras, media URLs, thumbnails, task
- *   GET  /api/tasks/:id             a task's guide (markdown, without its header)
+ *   GET  /api/tasks/:id             a task's guide as it is now (markdown without its header, title,
+ *                                   version); ETag = version
+ *   PUT  /api/tasks/:id             edit it: {"markdown"}; If-Match must name the version edited
  *   GET  /api/annotations/:id       the saved annotation and sidecar; ETag = revision
  *   PUT  /api/annotations/:id       save; If-Match must name the revision that was edited
  *   POST /api/events                append a batch of telemetry events
@@ -24,13 +26,18 @@ import {
   validateAnnotationFile,
   validateSidecarDraft,
 } from '../core/annotation.ts';
-import type { QueueResponse, RecordingResponse, SaveResult, TaskInfo } from '../core/api-types.ts';
+import type {
+  GuideResponse,
+  QueueResponse,
+  RecordingResponse,
+  SaveResult,
+} from '../core/api-types.ts';
 import { type FrameMap, parseFramesCsv } from '../core/frame-map.ts';
 import { type AnnotationStore, RevisionConflict, type Stamp } from './annotations.ts';
-import { type Catalog, type Recording, referenceCamera } from './catalog.ts';
+import { type Catalog, type Recording, referenceCamera, type TaskGuide } from './catalog.ts';
 import { HttpError, readJson, sendJson } from './http.ts';
 import { sendFile } from './media.ts';
-import { guideMarkdown, guideTitle, guideVersion } from './task-guides.ts';
+import { editGuide, guideMarkdown, guideTitle, guideVersion } from './task-guides.ts';
 import type { TelemetryLog } from './telemetry.ts';
 
 export interface ApiOptions {
@@ -70,13 +77,7 @@ export function createApi(options: ApiOptions): Handler {
     const guide = id === null ? undefined : tasks.get(id);
     if (!guide || id === null) return null;
     const text = await readFile(guide.path, 'utf8').catch(() => null);
-    if (text === null) return null;
-    const info: TaskInfo = {
-      id,
-      title: guideTitle(text) ?? guide.title,
-      version: guideVersion(text),
-    };
-    return { info, markdown: guideMarkdown(text) };
+    return text === null ? null : guideFrom(id, guide, text);
   };
 
   /** The reference camera's frame map, parsed once per recording (retried if reading failed). */
@@ -138,11 +139,29 @@ export function createApi(options: ApiOptions): Handler {
   const taskGuide: Route = async (_req, res, [id = '']) => {
     const guide = tasks.has(id) ? await guideNow(id) : null;
     if (!guide) throw new HttpError(404, `no task ${id}`);
-    res.writeHead(200, {
-      'Content-Type': 'text/markdown; charset=utf-8',
-      'Cache-Control': 'no-store',
+    sendJson(res, 200, guide, { ETag: `"${guide.info.version}"` });
+  };
+
+  /** Anyone may edit a guide; an edit based on an older version is refused, as for saves. */
+  const putTaskGuide: Route = async (req, res, [id = '']) => {
+    const guide = tasks.get(id);
+    if (!guide) throw new HttpError(404, `no task ${id}`);
+    const base = /^"(.+)"$/.exec(req.headers['if-match'] ?? '')?.[1];
+    if (base === undefined) throw new HttpError(428, 'send If-Match with the version you edited');
+    const { markdown } = ((await readJson(req)) ?? {}) as { markdown?: unknown };
+    if (typeof markdown !== 'string' || markdown.trim() === '') {
+      throw new HttpError(400, 'send the new text as {"markdown": "…"}; it cannot be empty');
+    }
+    const edit = await editGuide(guide, base, markdown).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT')
+        throw new HttpError(404, `the guide of ${id} is missing on disk`);
+      throw error;
     });
-    res.end(guide.markdown);
+    if (!edit.saved) {
+      throw new HttpError(412, 'the guide changed since it was opened', { version: edit.version });
+    }
+    const saved = guideFrom(id, guide, edit.text);
+    sendJson(res, 200, saved, { ETag: `"${saved.info.version}"` });
   };
 
   const getAnnotation: Route = async (_req, res, [id]) => {
@@ -230,6 +249,7 @@ export function createApi(options: ApiOptions): Handler {
     ['GET', /^\/api\/queue$/, queue],
     ['GET', /^\/api\/recordings\/([^/]+)$/, recording],
     ['GET', /^\/api\/tasks\/([^/]+)$/, taskGuide],
+    ['PUT', /^\/api\/tasks\/([^/]+)$/, putTaskGuide],
     ['GET', /^\/api\/annotations\/([^/]+)$/, getAnnotation],
     ['PUT', /^\/api\/annotations\/([^/]+)$/, putAnnotation],
     ['POST', /^\/api\/events$/, postEvents],
@@ -256,6 +276,17 @@ export function createApi(options: ApiOptions): Handler {
       } else throw error;
     }
     return true;
+  };
+}
+
+/**
+ * A guide's file text as the client sees it: its title and version, and the Markdown. Without a
+ * heading the title is the file name, as at ingest.
+ */
+function guideFrom(id: string, guide: TaskGuide, text: string): GuideResponse {
+  return {
+    info: { id, title: guideTitle(text) ?? basename(guide.path), version: guideVersion(text) },
+    markdown: guideMarkdown(text),
   };
 }
 

@@ -1,6 +1,6 @@
 /**
  * The catalog: the recordings ingest found and validated, with the real paths of their files.
- * Ingest writes it to derived/catalog.json; the server only reads it. Source files are never
+ * Ingest writes it to derived/catalog.json; the server only reads it. Recording files are never
  * copied, moved or modified.
  */
 import { readFile } from 'node:fs/promises';

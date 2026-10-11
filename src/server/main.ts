@@ -17,7 +17,7 @@ import { parseArgs } from 'node:util';
 import { AnnotationStore } from './annotations.ts';
 import { createApi } from './api.ts';
 import { readCatalog } from './catalog.ts';
-import { sendJson } from './http.ts';
+import { isLocalHost, sendJson } from './http.ts';
 import { sendFile } from './media.ts';
 import { TelemetryLog } from './telemetry.ts';
 
@@ -62,6 +62,10 @@ const server = createServer((req, res) => {
 const ui = values.dev ? await viteUi() : staticUi(resolve('dist'));
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  // The recordings, saves and task guides are for pages opened on this machine only.
+  if (!isLocalHost(req.headers.host)) {
+    return sendJson(res, 403, { error: `open the tool at http://127.0.0.1:${values.port}` });
+  }
   if (!(await api(req, res))) await ui(req, res);
 }
 

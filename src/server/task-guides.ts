@@ -11,12 +11,17 @@
  *   # Stack the cups
  *
  * A recording's task is the first guide, by file name, that covers it. The tool shows that guide
- * beside the video and stamps its version on every save, but never interprets it.
+ * beside the video, lets anyone edit its text there, and stamps its version on every save, but
+ * never interprets it.
  */
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { isSafeRecordingId, type TaskGuide } from './catalog.ts';
+import { oneAtATime, writeFileAtomic } from './files.ts';
+
+/** One edit at a time per guide file, so two edits can't both pass the version check. */
+const edits = oneAtATime();
 
 /**
  * The guides in `dir` (only `*.md` directly in it), by task id in file-name order, and what was
@@ -69,6 +74,41 @@ export function guideTitle(text: string): string | null {
   return /^# +(.*\S)/m.exec(guideMarkdown(text))?.[1] ?? null;
 }
 
+/**
+ * A guide's file text with new Markdown under the header it has. A file that lost its header gets
+ * one again, naming the recordings the guide was matched with.
+ */
+export function withMarkdown(
+  text: string,
+  markdown: string,
+  recordings: readonly string[],
+): string {
+  const head = splitHeader(text)?.head ?? `---\nrecordings: ${recordings.join(', ')}\n---`;
+  return `${head}\n\n${markdown.replace(/^\s*\n/, '').trimEnd()}\n`;
+}
+
+/**
+ * Replaces a guide's Markdown, keeping its header, if the file is still at the version the edit
+ * started from; otherwise writes nothing and names the version the file has now.
+ */
+export function editGuide(
+  guide: TaskGuide,
+  baseVersion: string,
+  markdown: string,
+): Promise<
+  | { readonly saved: true; readonly text: string }
+  | { readonly saved: false; readonly version: string }
+> {
+  return edits(guide.path, async () => {
+    const text = await readFile(guide.path, 'utf8');
+    const version = guideVersion(text);
+    if (version !== baseVersion) return { saved: false, version };
+    const edited = withMarkdown(text, markdown, guide.recordings);
+    await writeFileAtomic(guide.path, edited);
+    return { saved: true, text: edited };
+  });
+}
+
 /** A guide from its file's text, or null when it covers nothing; with what was wrong. */
 function parseTaskGuide(
   path: string,
@@ -93,15 +133,16 @@ function parseTaskGuide(
 }
 
 /**
- * The header's lines, between the `---` that opens the file and the next, and the Markdown after
- * it without the blank lines in between; null without a header.
+ * The header as written (`head`, from the `---` that opens the file to the next) and its lines,
+ * and the Markdown after it without the blank lines in between; null without a header.
  */
-function splitHeader(text: string): { header: string[]; markdown: string } | null {
+function splitHeader(text: string): { head: string; header: string[]; markdown: string } | null {
   const lines = text.split(/\r?\n/);
   if (lines[0]?.trim() !== '---') return null;
   const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
   if (end < 0) return null;
   return {
+    head: lines.slice(0, end + 1).join('\n'),
     header: lines.slice(1, end).filter((line) => line.trim() !== ''),
     markdown: lines
       .slice(end + 1)

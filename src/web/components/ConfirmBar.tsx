@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from 'react';
+import { isTyping } from '../keymap.ts';
 import { WarningIcon } from './icons.tsx';
 
 export interface BarAction {
@@ -34,8 +35,8 @@ export function ConfirmBar({ title, details, actions, onCancel, armMs = 0 }: Con
   const detailsId = useId();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // A held key is not an answer either.
-      if (event.repeat) return;
+      // A held key is not an answer either, nor a key typed into a text field (a task guide).
+      if (event.repeat || isTyping(event.target)) return;
       const action = actions.find((a) => a.matches(event));
       if (!action && event.key !== 'Escape') return;
       event.preventDefault();

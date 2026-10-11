@@ -35,6 +35,15 @@ export function sendJson(
   res.end(text);
 }
 
+/**
+ * Whether a request was addressed to this machine by name. A web page on another site can point
+ * its own name at 127.0.0.1 (DNS rebinding), but its requests still carry that name in Host.
+ */
+export function isLocalHost(host: string | undefined): boolean {
+  const name = /^(.*?)(:\d+)?$/.exec(host ?? '')?.[1];
+  return name === '127.0.0.1' || name === 'localhost';
+}
+
 /** Reads a JSON request body, refusing anything over `limitBytes`. */
 export async function readJson(req: IncomingMessage, limitBytes = 2_000_000): Promise<unknown> {
   const chunks: Buffer[] = [];

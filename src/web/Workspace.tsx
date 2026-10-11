@@ -100,6 +100,8 @@ export function Workspace(props: WorkspaceProps) {
   const [view] = useState(() => new TimelineView(timelineEndUs(frames)));
   const seekFailed = usePlayer(player, (s) => s.seekFailed);
   const [showCommands, setShowCommands] = useState(false);
+  /** The recording's task as its guide is now; the Task tab reads it, and edits can rename it. */
+  const [task, setTask] = useState(info.task);
   /** An outcome waiting for a confirmation or a reason. */
   const [asking, setAsking] = useState<Question | null>(null);
   const [menu, setMenu] = useState<{
@@ -413,10 +415,10 @@ export function Workspace(props: WorkspaceProps) {
           {props.queueBar}
           {/* What to do first, then where things stand; the id only to quote, e.g. in a report. */}
           <span
-            className={`task-name${info.task ? '' : ' task-none'}`}
+            className={`task-name${task ? '' : ' task-none'}`}
             title="The task to annotate: the Task tab says what to keep"
           >
-            {info.task ? info.task.title : 'No task guide'}
+            {task ? task.title : 'No task guide'}
           </span>
           <span className="recording-length" title="Length of the recording">
             {clock(info.durationS).replace(/\.\d$/, '')}
@@ -678,7 +680,15 @@ export function Workspace(props: WorkspaceProps) {
                 onMenu={openMenu}
               />
             ),
-            Task: <TaskPanel task={info.task} />,
+            Task: (
+              <TaskPanel
+                task={task}
+                onGuide={(now) => {
+                  setTask(now);
+                  annotation.noteGuide(now.version);
+                }}
+              />
+            ),
             Guide: <GuidePanel />,
           }}
         />

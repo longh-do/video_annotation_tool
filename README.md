@@ -20,9 +20,9 @@ pnpm ingest ~/Downloads/recordings   # checks every recording, builds thumbnails
 pnpm dev                                                            # then open http://127.0.0.1:5173
 ```
 
-`pnpm ingest` takes the folder holding the downloads: each recording is a folder with `manifest.json`, the `*-frames.csv` files and `videos/` (the frames and manifest may also sit in an `annotation-data/` folder beside `videos/`). Nothing in it is ever modified; ingest writes `derived/catalog.json` and reports any recording it rejects. Annotations are saved in `annotations/`, telemetry in `telemetry/events.jsonl`. For a production build: `pnpm build && pnpm start`.
+`pnpm ingest` takes the folder holding the downloads: each recording is a folder with `manifest.json`, the `*-frames.csv` files and `videos/` (the frames and manifest may also sit in an `annotation-data/` folder beside `videos/`). The recordings in it are never modified; ingest writes `derived/catalog.json` and reports any recording it rejects. Annotations are saved in `annotations/`, telemetry in `telemetry/events.jsonl`. For a production build: `pnpm build && pnpm start`.
 
-**Task guides** are Markdown files, one per task, written by whoever sets up the batch: what to keep and how to tell where it starts and stops. They go in a `tasks/` folder inside the recordings folder (or anywhere, with `--tasks <folder>`). A short header lists the recordings each guide covers (`recordings: lab-2-*, kitchen-*`), and the tool shows the matching guide in the Task tab and stamps its version on every save. Edits to a guide show on the next page load; which recordings it covers is read by ingest. The guides are about the data, so they don't live in this repository; [docs/task-guide-template.md](docs/task-guide-template.md) shows how to write one. How to use the tool itself is in the Guide tab, written in [src/web/guide.md](src/web/guide.md).
+**Task guides** are Markdown files in [`tasks/`](tasks), one per task: what to keep and how to tell where it starts and stops. Here they are the two tasks of the example recordings, [cloth folding](tasks/cloth-folding.md) and [cable plugging](tasks/cable-plugging.md). A short header lists the recordings each guide covers (`recordings: 2026-10-09--*`), and the tool shows the matching guide in the Task tab and stamps its version on every save. Anyone can edit a guide, with **Edit** in the Task tab or in any text editor; edits show on the next page load. Which recordings a guide covers is read by `pnpm ingest` (`--tasks <folder>` reads the guides from another folder), and [docs/task-guide-template.md](docs/task-guide-template.md) shows how to write a new one. How to use the tool itself is in the Guide tab, written in [src/web/guide.md](src/web/guide.md).
 
 ## Controls
 
@@ -101,5 +101,6 @@ The end-to-end tests need ffmpeg: they generate small variable-frame-rate clips 
 | `src/server/` | The local server: ingest, media with byte ranges, annotation saves with revisions, telemetry, the score report. |
 | `src/web/` | The React UI: player, timeline, check pass, queue, saving. |
 | `scripts/` | `ingest`, `score`, `perf` and `demo` (plays the demo steps in a Chrome window). |
+| `tasks/` | The task guides, one Markdown file per task. |
 | `tests/` | Unit, property and end-to-end tests on synthetic data, plus the opt-in checks on the real recordings. |
 | `docs/` | [Design](docs/design.md), [scaling](docs/scaling.md), a [task guide template](docs/task-guide-template.md). |

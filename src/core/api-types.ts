@@ -49,6 +49,13 @@ export interface TaskInfo {
   readonly version: string;
 }
 
+/** A task's guide as it is now, read or just edited. */
+export interface GuideResponse {
+  readonly info: TaskInfo;
+  /** The guide without its header, as the Task tab shows it. */
+  readonly markdown: string;
+}
+
 export interface RecordingResponse {
   readonly id: string;
   readonly durationS: number;

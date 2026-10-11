@@ -10,6 +10,14 @@ async function open(page: Page, frame: number, id = recording.id) {
   await expect(page.locator(`.time[data-frame="${frame}"]`)).toBeVisible();
 }
 
+/** Opens another recording in the same page, as a link or the queue does. */
+async function showRecording(page: Page, id: string) {
+  await page.evaluate((hash) => {
+    location.hash = hash;
+  }, `${id}/0`);
+  await expect(page.locator('.recording-id')).toHaveText(id);
+}
+
 async function goTo(page: Page, frame: number) {
   await page.evaluate((hash) => {
     location.hash = hash;
@@ -288,4 +296,71 @@ test("each recording shows its own task's guide, or says there is none", async (
   await expect(page.getByRole('tabpanel', { name: 'Guide' }).locator('h1')).toHaveText(
     'How to annotate',
   );
+});
+
+test('anyone can edit the task guide in the Task tab; the edit is the guide from then on', async ({
+  page,
+  request,
+}) => {
+  const url = '/api/tasks/synthetic';
+  const original: string = (await (await request.get(url)).json()).markdown;
+  const other = SYNTHETIC_RECORDINGS[0] as SyntheticRecording;
+  await resetAnnotation(request, recording.id);
+  try {
+    // Another recording of the task is loaded first, so the page holds its task as it was.
+    await open(page, 0, other.id);
+    await showRecording(page, recording.id);
+    await page.getByRole('tab', { name: 'Task' }).click();
+    const panel = page.getByRole('tabpanel', { name: 'Task' });
+    await panel.getByRole('button', { name: 'Edit' }).click();
+    const text = panel.getByRole('textbox', { name: 'Task guide' });
+    await expect(text).toBeFocused();
+    await expect(text).toHaveValue(original);
+    await text.fill(original.replace('# Example task for the tests', '# Edited example task'));
+    // Keys typed here are text, not shortcuts: S and D mark nothing.
+    await page.keyboard.type('\nPress s and d.');
+    await expect(page.locator('.tl-badge')).toHaveCount(0);
+    await page.keyboard.press('ControlOrMeta+Enter');
+    await expect(page.locator('.task-name')).toHaveText('Edited example task');
+    await expect(panel.locator('h1')).toHaveText('Edited example task');
+    await expect(panel).toContainText('Press s and d.');
+    // The other recording, loaded before the edit, shows it too; so does a reload.
+    await showRecording(page, other.id);
+    await expect(page.locator('.task-name')).toHaveText('Edited example task');
+    await page.reload();
+    await expect(page.locator('.task-name')).toHaveText('Edited example task');
+  } finally {
+    const current = await request.get(url);
+    const restored = await request.put(url, {
+      headers: { 'If-Match': current.headers().etag ?? '' },
+      data: { markdown: original },
+    });
+    expect(restored.ok()).toBe(true);
+  }
+});
+
+test('keys typed into the task guide never answer a question on screen', async ({
+  page,
+  request,
+}) => {
+  await resetAnnotation(request, recording.id);
+  await open(page, 0);
+  await page.keyboard.press('n');
+  const question = page.getByRole('alertdialog', { name: 'No useful task?' });
+  await expect(question).toBeVisible();
+  await page.getByRole('tab', { name: 'Task' }).click();
+  const panel = page.getByRole('tabpanel', { name: 'Task' });
+  await panel.getByRole('button', { name: 'Edit' }).click();
+  const text = panel.getByRole('textbox', { name: 'Task guide' });
+  await expect(text).toBeFocused();
+  // Enter would answer "Cut all and submit"; typed here, it is a new line.
+  const lines = (await text.inputValue()).split('\n').length;
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await text.inputValue()).split('\n').length).toBe(lines + 1);
+  await expect(question).toBeVisible();
+  await expect(page.locator('.recording-id')).toHaveText(recording.id);
+  await panel.getByRole('button', { name: 'Cancel' }).click();
+  await question.getByRole('button', { name: /Back/ }).click();
+  await expect(question).toBeHidden();
+  expect((await savedAnnotation(request, recording.id))?.annotation.status).not.toBe('complete');
 });

@@ -1,6 +1,7 @@
 /** The server API, typed with the shapes the server shares. */
 import type {
   ErrorBody,
+  GuideResponse,
   QueueResponse,
   RecordingResponse,
   SavedAnnotation,
@@ -55,6 +56,18 @@ export const saveAnnotation = (
     headers: { 'Content-Type': 'application/json', 'If-Match': `"${revision}"` },
     body: JSON.stringify(payload),
     keepalive,
+  });
+
+/** A task's guide as it is now; its version is the one to name when saving an edit of it. */
+export const fetchGuide = (id: string) =>
+  request<GuideResponse>(`/api/tasks/${encodeURIComponent(id)}`);
+
+/** Saves an edit of a task's guide on top of `version`; a stale version fails with ApiError 412. */
+export const saveGuide = (id: string, version: string, markdown: string) =>
+  request<GuideResponse>(`/api/tasks/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'If-Match': `"${version}"` },
+    body: JSON.stringify({ markdown }),
   });
 
 export async function fetchText(url: string): Promise<string> {

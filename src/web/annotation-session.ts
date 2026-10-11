@@ -70,7 +70,7 @@ export class AnnotationSession {
   readonly discarded: boolean;
   readonly #reference: Reference;
   /** The version of the recording's task guide, which the annotator works from. */
-  readonly #guidelineVersion: string | null;
+  #guidelineVersion: string | null;
   readonly #telemetry: Telemetry | null;
   readonly #stop: (() => void)[] = [];
   #place: Place;
@@ -155,6 +155,16 @@ export class AnnotationSession {
     this.#clock?.setPlaying(playing);
     if (playing) this.#maxRate = Math.max(this.#maxRate, rate);
     this.log('playback', { action, rate });
+  }
+
+  /**
+   * The version of the task's guide on screen now. It changes when someone edits the guide, here
+   * or since the recording was loaded; events from then on carry the new one.
+   */
+  noteGuide(version: string): void {
+    if (version === this.#guidelineVersion) return;
+    this.#guidelineVersion = version;
+    this.log('guide_changed');
   }
 
   /** Logs an event about this recording, at the frame on screen. */
