@@ -36,15 +36,15 @@ pnpm dev                                                            # then open 
 | **⌘Z** · **⇧⌘Z** | Undo · redo (unlimited; a drag or a held nudge is one step) |
 | **⌘↵** | Submit and open the next recording (asks first if marks still need checking, the last interval never stops, or nothing is kept) |
 | **←** **→** (⇧ for 10) | Step one frame (pauses) |
-| hold **F** | Skim at 6× |
-| **[** **]** (or **⇧Tab** **Tab**) | Previous · next boundary |
+| hold **F** | Skim at 6× (or hold the **6×** button) |
+| **[** **]** | Previous · next boundary |
 | **⌘+** **⌘−** **⌘0** | Zoom the timeline in · out · to the whole recording |
 | **,** **.** (⇧ for 10) | Move the selected boundary one frame |
-| **Backspace** (or **Delete**) | Delete the selected boundary, or the selected interval |
+| **Backspace** (or **Delete**) | Delete the selected interval, or else the selected boundary |
 | **N** | No useful task (cut everything; asks first) |
 | **Q** | Needs review: a reason (1–4) and a note |
 
-On a Windows or Linux keyboard ⌘ is Ctrl. Everything but the 6× skim also works with the mouse alone (the speed list goes up to 4×): **Start**, **Stop**, play and the speed list sit above the timeline; **Check the next mark** does the check pass; **Submit** (*No useful task* and *Needs review* are in the menu beside it), undo and redo are at the top. On the timeline, click to jump (a click on an interval selects it), drag an interval's edge to move it, click a boundary's badge to delete it, right-click an interval to merge or delete it, and pinch or ⌘-scroll to zoom. A click on a gripper camera shows it large; marks are always saved on the head camera's frames.
+On a Windows or Linux keyboard ⌘ is Ctrl. Everything also works with the mouse alone: **Start**, **Stop**, play, the speed list and **6×** (skims while held) sit above the timeline; **Check the next mark** does the check pass; **Submit** (*No useful task* and *Needs review* are in the menu beside it), undo and redo are at the top. On the timeline, click to jump (a click on an interval selects it), drag an interval's edge to move it, click a boundary's badge to delete it, right-click an interval to merge or delete it, and pinch or ⌘-scroll to zoom. A click on a gripper camera shows it large; marks are always saved on the head camera's frames.
 
 ## Saved format
 

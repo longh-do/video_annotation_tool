@@ -173,7 +173,7 @@ export const BINDINGS = [
   },
   {
     command: 'deleteSelected',
-    label: 'Delete the selected boundary or interval',
+    label: 'Delete the selected interval or boundary',
     group: 'Correct',
     chords: [{ code: 'Backspace' }, { code: 'Delete' }],
   },
