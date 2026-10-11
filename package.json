@@ -1,0 +1,24 @@
+{
+  "name": "video_annotation_tool",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mark the parts of untrimmed multi-camera recordings to keep, frame-accurately and fast.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "lint": "biome check && tsc --build",
+    "format": "biome check --write",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@playwright/test": "1.64.0",
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}

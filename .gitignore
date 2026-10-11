@@ -1,0 +1,36 @@
+# Dependencies and build output
+node_modules/
+/dist/
+*.tsbuildinfo
+
+# Generated on each machine
+/derived/
+/annotations/
+/telemetry/
+
+# Recording data lives outside the repo and must never be committed
+*.mp4
+*.mov
+*.webm
+*.csv
+*.csv.gz
+*.jsonl
+*.jsonl.gz
+*.pdf
+*.zip
+manifest.json
+annotation-template.json
+source-checksums.json
+README.txt
+START-HERE.txt
+
+# Test output
+test-results/
+playwright-report/
+blob-report/
+coverage/
+
+# Local files
+.DS_Store
+*.log
+.env*
