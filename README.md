@@ -4,9 +4,9 @@ A browser tool for marking which parts of untrimmed, multi-camera robot recordin
 
 Annotators watch at 2× and press **S** (or click **Start**) where a task starts and **D** (**Stop**) where it stops. Marks made while the video plays land late by the annotator's reaction time, so they show as *needs check* and a **check pass** visits each of them: the video stops on the mark, and `,` `.` (or a drag on the zoomed-in timeline) put it on the exact frame. **⌘↵** (or **Submit**) saves and the next recording, already fetched, opens at once. Each recording produces one JSON file of kept intervals in source-clock nanoseconds, so the same cuts apply to every synchronized stream.
 
-![The tool on a synthetic test clip, during the check pass](docs/screenshot.png)
+![The tool on the cloth-folding recording, during the check pass](docs/screenshot.jpg)
 
-*A synthetic test clip (the tests' own footage): the head camera large with the two gripper cameras beside it, the kept intervals on the right; below, the check pass, the transport row and the timeline, kept intervals in yellow.*
+*The 89-second cloth-folding example: the head camera large with the two gripper cameras beside it, the kept interval on the right; below, the check pass on the live Stop mark, the transport row and the timeline, the kept interval in yellow.*
 
 Why this design, in short: keystrokes at speed instead of Start/Stop buttons (a key press costs ~0.3 s and the eyes stay on the video), keys that **set** a state rather than toggle it (a double press changes nothing, so one slip never inverts the rest of the recording), and precision moved into a separate pass instead of watching at 1× with the mouse. The reasoning and the estimates behind it are in [docs/design.md](docs/design.md); the speed gains are still to be measured.
 
@@ -83,7 +83,7 @@ pnpm test:e2e             # Playwright in Chrome on generated clips whose frames
 pnpm build && pnpm perf   # the longest real recording, 320 test boundaries, 2×: must draw at 60 fps
 ```
 
-The end-to-end tests need ffmpeg: they generate small variable-frame-rate clips in which every frame carries its index as a barcode, so a test can check which frame the browser really shows. No company data is in the repository; with `RECORDINGS_DIR` set to the downloads folder, `pnpm test` also checks ingest and timestamps on the real recordings.
+The end-to-end tests need ffmpeg: they generate small variable-frame-rate clips in which every frame carries its index as a barcode, so a test can check which frame the browser really shows. Apart from this README's screenshot, no company data is in the repository; with `RECORDINGS_DIR` set to the downloads folder, `pnpm test` also checks ingest and timestamps on the real recordings.
 
 ## Limitations
 
