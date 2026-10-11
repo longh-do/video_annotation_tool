@@ -17,6 +17,14 @@
       "quoteStyle": "single"
     }
   },
+  "linter": {
+    "rules": {
+      "style": {
+        "noNonNullAssertion": "off"
+      }
+    }
+  },
+  "plugins": ["./lint-rules/no-number-ns.grit"],
   "assist": {
     "actions": {
       "source": {

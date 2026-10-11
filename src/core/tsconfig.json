@@ -1,0 +1,9 @@
+{
+  // The core is pure: ES2024 only, no DOM and no Node types, so the compiler rejects any
+  // browser or Node API used here.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../../node_modules/.tmp/core.tsbuildinfo"
+  },
+  "include": ["."]
+}

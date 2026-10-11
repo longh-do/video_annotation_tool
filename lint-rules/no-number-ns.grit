@@ -1,0 +1,17 @@
+// Nanosecond timestamps stay bigint in memory and decimal strings on disk. Converting one to a
+// JS Number silently loses precision for epoch-based clocks. Everywhere, flag the usual
+// conversions of anything named like a timestamp (`fooNs`, `foo_ns`, `ns`); in the core, where the
+// contract lives, flag every conversion, so a name can't slip through.
+language js
+
+or {
+  `Number($value)`,
+  `parseInt($value)`,
+  `parseFloat($value)`,
+  `Number.parseInt($value)`,
+  `Number.parseFloat($value)`,
+  `+$value`
+} as $call where {
+  or { $value <: r".*(?:Ns|_ns|\bns)\b.*", $filename <: r".*src/core/.*" },
+  register_diagnostic(span=$call, message="Nanosecond timestamps must stay bigint or decimal strings; never convert them to Number.")
+}
