@@ -31,12 +31,23 @@ export const fetchQueue = () => request<QueueResponse>('/api/queue');
 export const fetchRecording = (id: string) =>
   request<RecordingResponse>(`/api/recordings/${encodeURIComponent(id)}`);
 
-/** The saved annotation, or null if there is none yet. */
-export async function fetchSaved(id: string): Promise<SavedAnnotation | null> {
+/** What the server has for a recording. */
+export interface ServerAnnotation {
+  /** Null if nothing is saved, or its files were deleted. */
+  readonly saved: SavedAnnotation | null;
+  /** The revision to save on top of: the server counts saves even when their files are gone. */
+  readonly revision: number;
+}
+
+export async function fetchSaved(id: string): Promise<ServerAnnotation> {
   try {
-    return await request<SavedAnnotation>(`/api/annotations/${encodeURIComponent(id)}`);
+    const saved = await request<SavedAnnotation>(`/api/annotations/${encodeURIComponent(id)}`);
+    return { saved, revision: saved.revision };
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return null;
+    // Nothing saved; the answer still names the revision.
+    if (error instanceof ApiError && error.status === 404) {
+      return { saved: null, revision: error.body.revision ?? 0 };
+    }
     throw error;
   }
 }
@@ -69,9 +80,15 @@ export async function fetchText(url: string): Promise<string> {
   return response.text();
 }
 
-/** Seeking needs byte ranges; check the media server really answers them before annotating. */
+/**
+ * Seeking needs byte ranges; check the media server really answers them before annotating. False
+ * when it sends the video whole; a video it can't send at all (e.g. 404) is an error.
+ */
 export async function supportsRanges(videoUrl: string): Promise<boolean> {
   const response = await fetch(videoUrl, { headers: { Range: 'bytes=0-1' } });
   await response.body?.cancel();
+  if (!response.ok) {
+    throw new ApiError(response.status, { error: `${videoUrl}: HTTP ${response.status}` });
+  }
   return response.status === 206;
 }

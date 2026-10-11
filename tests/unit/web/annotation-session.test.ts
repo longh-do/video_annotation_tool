@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { SavePayload } from '../../../src/core/api-types.ts';
 import { AnnotationSession } from '../../../src/web/annotation-session.ts';
+import type { JournalEntry, UnsavedChanges } from '../../../src/web/journal.ts';
 import type { LoadedRecording } from '../../../src/web/recording.ts';
 import type { Telemetry } from '../../../src/web/telemetry.ts';
 import { frameMap } from '../synthetic.ts';
@@ -28,6 +29,7 @@ const recording: LoadedRecording = {
   frames: [frames],
   seekable: true,
   saved: null,
+  revision: 0,
   unsaved: null,
 };
 
@@ -37,7 +39,9 @@ describe('annotation session', () => {
   let session: AnnotationSession;
 
   beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'setInterval', 'Date'] });
+    vi.useFakeTimers({
+      toFake: ['performance', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    });
     events = [];
     saves = [];
     vi.stubGlobal('document', {
@@ -137,5 +141,42 @@ describe('annotation session', () => {
       wall_ms: last.sidecar.effort.wall_ms,
     });
     expect(events.map((e) => e.event)).toContain('task_opened');
+  });
+
+  test('logging never gets in the way of saving', async () => {
+    const telemetry = {
+      log: () => {
+        throw new TypeError('crypto.randomUUID is not a function');
+      },
+    } as unknown as Telemetry;
+    const unlogged = new AnnotationSession(recording, null, telemetry);
+    const mark = { type: 'mark', frame: 30, state: 'keep', origin: 'paused' } as const;
+    expect(() => unlogged.editor.dispatch(mark)).not.toThrow();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(saves).toHaveLength(1);
+    unlogged.dispose();
+  });
+
+  test('holding a nudge key is journaled when it starts and when it is saved, not at every repeat', async () => {
+    const written: JournalEntry[] = [];
+    const journal: UnsavedChanges = {
+      write: async (entry) => void written.push(entry),
+      settle: async () => {},
+      forget: async () => {},
+    };
+    const held = new AnnotationSession(recording, journal, null);
+    held.editor.dispatch({ type: 'mark', frame: 100, state: 'keep', origin: 'paused' });
+    await vi.advanceTimersByTimeAsync(300);
+    written.length = 0;
+    // . held for a second: the key repeats every 33 ms.
+    for (let i = 0; i < 30; i++) {
+      held.editor.dispatch({ type: 'nudge', delta: 1, now: i * 33 });
+      await vi.advanceTimersByTimeAsync(33);
+    }
+    await vi.advanceTimersByTimeAsync(300);
+    expect(written).toHaveLength(2);
+    expect(written.at(-1)?.payload.sidecar.boundaries[0]?.frame).toBe(130);
+    expect(saves.at(-1)?.sidecar.boundaries[0]?.frame).toBe(130);
+    held.dispose();
   });
 });

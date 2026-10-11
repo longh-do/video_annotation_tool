@@ -49,7 +49,7 @@ export class Telemetry {
 
   log(place: EventPlace, event: string, fields: Readonly<Record<string, unknown>> = {}): void {
     this.#buffer.push({
-      event_id: crypto.randomUUID(),
+      event_id: eventId(),
       event,
       ts_wall_ms: Date.now(),
       ts_mono_ms: Math.round(performance.now()),
@@ -100,6 +100,13 @@ export class Telemetry {
   #keep(batch: readonly object[]): void {
     this.#buffer = [...batch, ...this.#buffer].slice(-MAX_KEPT);
   }
+}
+
+/** A random id. randomUUID only exists on secure pages (HTTPS or localhost), not on plain HTTP. */
+function eventId(): string {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /** Events a previous page set aside; they are sent first. */

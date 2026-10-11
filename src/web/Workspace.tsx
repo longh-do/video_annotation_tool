@@ -229,9 +229,16 @@ export function Workspace(props: WorkspaceProps) {
   }, [player, info.id]);
 
   // Editing stops once saving has: anything typed after a conflict would be lost. Keys don't
-  // edit during a drag either: the drag is one undo step.
+  // edit during a drag either: the drag is one undo step. A recording open in another tab is
+  // edited there.
   const editable =
-    canMark && recording.seekable && !seekFailed && !saver.stopped && !blocked && asking === null;
+    canMark &&
+    recording.seekable &&
+    !seekFailed &&
+    !saver.stopped &&
+    !annotation.openElsewhere &&
+    !blocked &&
+    asking === null;
 
   const present = state.history.present;
   const finish = (decision: Decision) => {
@@ -565,13 +572,22 @@ export function Workspace(props: WorkspaceProps) {
               )}
               {!recording.seekable && (
                 <p className="banner" role="alert">
-                  The media server ignores byte ranges, so seeking can't work. Start it with pnpm
-                  dev.
+                  The video server ignores byte ranges, so seeking can't work and marking is off.
+                  Please report it.
                 </p>
               )}
               {seekFailed && (
                 <p className="banner" role="alert">
                   Couldn't confirm which frame is on screen. Marking is off until a seek succeeds.
+                </p>
+              )}
+              {annotation.openElsewhere && (
+                <p className="banner" role="alert">
+                  This recording is open in another tab, so editing is off here. To edit here, close
+                  it there, then{' '}
+                  <button type="button" onClick={() => location.reload()}>
+                    Reload
+                  </button>
                 </p>
               )}
               {saver.stopped && (

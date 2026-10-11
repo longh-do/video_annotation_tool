@@ -94,4 +94,17 @@ describe('telemetry', () => {
     expect(storage.size).toBe(0);
     next.dispose();
   });
+
+  test('on a page without crypto.randomUUID (plain HTTP), events still get an id', async () => {
+    const real = globalThis.crypto;
+    vi.stubGlobal('crypto', { getRandomValues: real.getRandomValues.bind(real) });
+    const telemetry = new Telemetry(context);
+    telemetry.log(place, 'task_opened');
+    telemetry.log(place, 'playback');
+    await vi.advanceTimersByTimeAsync(5000);
+    const [first, second] = (posts[0]?.events ?? []) as { event_id?: string }[];
+    expect(first?.event_id).toMatch(/^[0-9a-f-]{32,36}$/);
+    expect(second?.event_id).not.toBe(first?.event_id);
+    telemetry.dispose();
+  });
 });

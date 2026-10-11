@@ -5,7 +5,11 @@
  * which can lose the last writes in a crash.
  *
  * IndexedDB can be unavailable (private windows, blocked site data); the tool then works as
- * before, without the safety net.
+ * before, without the safety net. Its data can also be cleared while the page is open: every call
+ * then fails as a promise, never as a throw.
+ *
+ * Only the tab that holds a recording's lock uses its entry (see Sessions), so another tab can
+ * never settle, recover or forget it.
  */
 import type { SavePayload } from '../core/api-types.ts';
 
@@ -15,9 +19,9 @@ export interface JournalEntry {
   readonly baseRevision: number;
   readonly payload: SavePayload;
   /**
-   * The save that was on its way to the server when this entry was written, if any. If it
-   * landed but the page died before hearing so, the server is one revision ahead with exactly
-   * this content, and the entry still applies on top of it.
+   * The save sent last whose answer hadn't come when this entry was written (on its way, or lost
+   * with the connection), if any. If it landed but the page never heard so, the server is one
+   * revision ahead with exactly this content, and the entry still applies on top of it.
    */
   readonly inFlight: SavePayload | null;
   /** When it was written (ms since the epoch); also tells entries apart. */
@@ -59,10 +63,10 @@ export class Journal implements UnsavedChanges {
     }
   }
 
-  write(entry: JournalEntry): Promise<void> {
+  async write(entry: JournalEntry): Promise<void> {
     const { store, done } = this.#transaction('readwrite');
     store.put(entry);
-    return done;
+    await done;
   }
 
   async read(recordingId: string): Promise<JournalEntry | null> {
@@ -72,7 +76,7 @@ export class Journal implements UnsavedChanges {
     return (await entry) ?? null;
   }
 
-  settle(recordingId: string, writtenAt: number, revision: number): Promise<void> {
+  async settle(recordingId: string, writtenAt: number, revision: number): Promise<void> {
     const { store, done } = this.#transaction('readwrite');
     const get = store.get(recordingId);
     get.onsuccess = () => {
@@ -81,19 +85,20 @@ export class Journal implements UnsavedChanges {
       if (entry.writtenAt <= writtenAt) store.delete(recordingId);
       else store.put({ ...entry, baseRevision: revision, inFlight: null });
     };
-    return done;
+    await done;
   }
 
-  forget(recordingId: string, writtenAt: number): Promise<void> {
+  async forget(recordingId: string, writtenAt: number): Promise<void> {
     const { store, done } = this.#transaction('readwrite');
     const get = store.get(recordingId);
     get.onsuccess = () => {
       const entry = get.result as JournalEntry | undefined;
       if (entry && entry.writtenAt <= writtenAt) store.delete(recordingId);
     };
-    return done;
+    await done;
   }
 
+  /** Throws if the database was closed, e.g. when the site's data was cleared. */
   #transaction(mode: IDBTransactionMode): { store: IDBObjectStore; done: Promise<void> } {
     const transaction = this.#db.transaction(STORE, mode, { durability: 'strict' });
     const done = new Promise<void>((resolve, reject) => {

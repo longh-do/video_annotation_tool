@@ -68,6 +68,8 @@ export class AnnotationSession {
   readonly recovered: boolean;
   /** The journal held changes that lost to a newer save (e.g. from another tab). */
   readonly discarded: boolean;
+  /** Another tab of this browser has the recording open: this one can't edit or save it. */
+  readonly openElsewhere: boolean;
   readonly #reference: Reference;
   /** The version of the recording's task guide, which the annotator works from. */
   #guidelineVersion: string | null;
@@ -88,24 +90,31 @@ export class AnnotationSession {
     recording: LoadedRecording,
     journal: UnsavedChanges | null,
     telemetry: Telemetry | null,
+    openElsewhere = false,
   ) {
     const { info, unsaved } = recording;
     const frames = recording.frames[0]!;
     this.#reference = { recordingId: info.id, referenceVideo: info.cameras[0]!.video, frames };
     this.#guidelineVersion = info.task?.version ?? null;
     this.#telemetry = telemetry;
-    const { start, recovered, discarded } = startingPoint(recording.saved, unsaved);
+    const { start, recovered, discarded } = startingPoint(
+      recording.saved,
+      unsaved,
+      recording.revision,
+    );
     const restored = fromSaved(start, frames);
     this.recovered = recovered;
     this.discarded = discarded;
+    this.openElsewhere = openElsewhere;
     this.editor = new Store(editorReducer, restored.editor);
-    this.saver = new Saver(info.id, restored.revision, journal);
+    this.saver = new Saver(info.id, recording.revision, journal);
     this.#place = {
       frame: restored.resumeFrame,
       playbackRate: start?.sidecar?.resume.playback_rate ?? DEFAULT_SPEED,
     };
     this.#effort = { activeMs: restored.activeMs, wallMs: restored.wallMs };
-    this.#stop.push(this.#saveChanges(), this.#logEdits(), this.#logSaves());
+    if (!openElsewhere) this.#stop.push(this.#saveChanges());
+    this.#stop.push(this.#logEdits(), this.#logSaves());
     if (recovered) {
       // Reopened changes aren't on the server yet.
       this.log('journal_recovered');
@@ -167,18 +176,22 @@ export class AnnotationSession {
     this.log('guide_changed');
   }
 
-  /** Logs an event about this recording, at the frame on screen. */
+  /** Logs an event about this recording, at the frame on screen; never throws. */
   log(event: string, fields: Readonly<Record<string, unknown>> = {}): void {
-    const { frame, playbackRate } = this.place;
-    const { recordingId, frames } = this.#reference;
-    const mediaPosNs = frame < 0 ? null : String(frameNs(frames, frame));
-    const place = {
-      recordingId,
-      guidelineVersion: this.#guidelineVersion,
-      mediaPosNs,
-      playbackRate,
-    };
-    this.#telemetry?.log(place, event, fields);
+    try {
+      const { frame, playbackRate } = this.place;
+      const { recordingId, frames } = this.#reference;
+      const mediaPosNs = frame < 0 ? null : String(frameNs(frames, frame));
+      const place = {
+        recordingId,
+        guidelineVersion: this.#guidelineVersion,
+        mediaPosNs,
+        playbackRate,
+      };
+      this.#telemetry?.log(place, event, fields);
+    } catch {
+      // Edits are logged on their way to being saved: a failure here must never stop that.
+    }
   }
 
   /** Applies an outcome (submit, no useful task, needs review); true once it is saved. */
@@ -195,18 +208,24 @@ export class AnnotationSession {
     this.saver.dispose();
   }
 
-  /** Saves each change to the annotation (not to the selection), never in the middle of a drag. */
+  /**
+   * Saves each change to the annotation (not to the selection), never in the middle of a drag. A
+   * held key's repeats merge into the undo step it began: the journal gets them once, when sent.
+   */
   #saveChanges(): () => void {
     let last = this.editor.getState();
     return this.editor.subscribe(() => {
       const current = this.editor.getState();
-      if (current.history.gestureBase !== null) return;
-      if (current.history.present === last.history.present && current.outcome === last.outcome) {
-        return;
-      }
+      const { history } = current;
+      if (history.gestureBase !== null) return;
+      if (history.present === last.history.present && current.outcome === last.outcome) return;
+      const repeat =
+        history.present !== last.history.present &&
+        history.past === last.history.past &&
+        history.run !== null;
       last = current;
       this.#lastPayload = this.#payload();
-      this.saver.save(this.#lastPayload);
+      this.saver.save(this.#lastPayload, !repeat);
     });
   }
 

@@ -103,13 +103,14 @@ export interface StartingPoint {
  * Where to reopen a recording. Changes left in the journal are reopened if they build on what the
  * server has: the revision they were made on, or the one after it when that is the save that was
  * in flight (it landed, but the page died before hearing so). Otherwise the server's version wins:
- * the journal's content landed too, or another tab saved since.
+ * the journal's content landed too, or another tab saved since. `revision` is the server's, which
+ * outlives deleted annotation files.
  */
 export function startingPoint(
   saved: SavedAnnotation | null,
   unsaved: JournalEntry | null,
+  revision = saved?.revision ?? 0,
 ): StartingPoint {
-  const revision = saved?.revision ?? 0;
   const builtOn =
     unsaved?.baseRevision === revision ||
     (unsaved?.baseRevision === revision - 1 && sameContent(saved, unsaved.inFlight));
@@ -120,7 +121,8 @@ export function startingPoint(
   return { start: saved, recovered: false, discarded };
 }
 
-function sameContent(saved: SavedAnnotation | null, payload: SavePayload | null): boolean {
+/** Whether the server has this content: the same annotation and boundaries, effort aside. */
+export function sameContent(saved: SavedAnnotation | null, payload: SavePayload | null): boolean {
   if (!saved?.sidecar || !payload) return false;
   const { status, notes, keep_intervals } = saved.annotation;
   const essence = (boundaries: SidecarDraft['boundaries']) =>
