@@ -8,7 +8,7 @@ Play the video (`Space`). Press `S` or **Start** where the task starts and `D` o
 
 ## 2. Check the marks
 
-Marks made while the video plays land a little late, so they show a **?** and *needs check*. Press `Enter`: the video stops on the next one. Put it on the exact frame where the task starts or stops with `,` and `.` (one frame at a time), or zoom the timeline in and drag it; then `Enter` accepts it and goes to the next. A click on a camera on the right shows it large, which helps to see the fingers. Marks made while paused are exact already.
+Marks made while the video plays land a little late, so they show a **?** and *needs check*. Press `Enter`: the video stops on the next one. Put it on the exact frame where the task starts or stops with `,` and `.` (one frame at a time), or zoom the timeline in and drag it; then `Enter` accepts it and goes to the next. A click on a camera on the right shows it large, for a closer look. Marks made while paused are exact already.
 
 ## 3. Submit
 

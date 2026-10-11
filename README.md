@@ -34,17 +34,17 @@ pnpm dev                                                            # then open 
 | **S** · **D** | Start here (keep from this frame) · stop here (cut from this frame); no change if already so |
 | **Enter** | Check: go to the next mark that needs it; on a mark, accept it and go on |
 | **⌘Z** · **⇧⌘Z** | Undo · redo (unlimited; a drag or a held nudge is one step) |
-| **⌘↵** | Submit and open the next recording (asks first if marks still need checking or the last interval never stops) |
+| **⌘↵** | Submit and open the next recording (asks first if marks still need checking, the last interval never stops, or nothing is kept) |
 | **←** **→** (⇧ for 10) | Step one frame (pauses) |
 | hold **F** | Skim at 6× |
-| **[** **]** | Previous · next boundary |
+| **[** **]** (or **⇧Tab** **Tab**) | Previous · next boundary |
 | **⌘+** **⌘−** **⌘0** | Zoom the timeline in · out · to the whole recording |
 | **,** **.** (⇧ for 10) | Move the selected boundary one frame |
-| **Backspace** | Delete the selected boundary, or the selected interval |
+| **Backspace** (or **Delete**) | Delete the selected boundary, or the selected interval |
 | **N** | No useful task (cut everything; asks first) |
 | **Q** | Needs review: a reason (1–4) and a note |
 
-On a Windows or Linux keyboard ⌘ is Ctrl. Everything also works with the mouse alone: **Start**, **Stop**, play and the speed list sit above the timeline; **Check the next mark** does the check pass; **Submit** (with *No useful task* and *Needs review* beside it), undo and redo are at the top. On the timeline, click to jump (a click on an interval selects it), drag an interval's edge to move it, click a boundary's badge to delete it, right-click an interval to merge or delete it, and pinch or ⌘-scroll to zoom. A click on a gripper camera shows it large; marks are always saved on the head camera's frames.
+On a Windows or Linux keyboard ⌘ is Ctrl. Everything but the 6× skim also works with the mouse alone (the speed list goes up to 4×): **Start**, **Stop**, play and the speed list sit above the timeline; **Check the next mark** does the check pass; **Submit** (*No useful task* and *Needs review* are in the menu beside it), undo and redo are at the top. On the timeline, click to jump (a click on an interval selects it), drag an interval's edge to move it, click a boundary's badge to delete it, right-click an interval to merge or delete it, and pinch or ⌘-scroll to zoom. A click on a gripper camera shows it large; marks are always saved on the head camera's frames.
 
 ## Saved format
 
@@ -72,7 +72,7 @@ Speed is the **real-time factor**: active time (page visible, and the annotator 
 pnpm score gold/ annotations/        # gold/ holds trusted <recording_id>.json files
 ```
 
-prints, per recording and in total: start and stop error in frames (median, p90 and signed bias, kept apart because stops are harder), missed, extra, merged and split intervals, seconds of footage kept or cut by mistake, the real-time factor and the seconds per check. Only completed annotations are scored. How this runs for 100 annotators (hidden gold, double annotation, thresholds per task) is in [docs/scaling.md](docs/scaling.md).
+prints, per recording: start and stop error in frames (median, p90 and signed bias, kept apart because stops are harder), missed, extra, merged and split intervals, seconds of footage kept or cut by mistake, the real-time factor and the seconds per check; a last row gives the errors, the real-time factor and the check times over all recordings. Only completed annotations are scored. How this runs for 100 annotators (hidden gold, double annotation, thresholds per task) is in [docs/scaling.md](docs/scaling.md).
 
 ## Tests
 
@@ -83,7 +83,7 @@ pnpm test:e2e             # Playwright in Chrome on generated clips whose frames
 pnpm build && pnpm perf   # the longest real recording, 320 boundaries, 2×: must draw at 60 fps
 ```
 
-The end-to-end tests need ffmpeg: they generate small variable-frame-rate clips in which every frame carries its index as a barcode, so a test can check which frame the browser really shows. No company data is in the repository.
+The end-to-end tests need ffmpeg: they generate small variable-frame-rate clips in which every frame carries its index as a barcode, so a test can check which frame the browser really shows. No company data is in the repository; with `RECORDINGS_DIR` set to the downloads folder, `pnpm test` also checks ingest and timestamps on the real recordings.
 
 ## Limitations
 
@@ -99,7 +99,7 @@ The end-to-end tests need ffmpeg: they generate small variable-frame-rate clips 
 |---|---|
 | `src/core/` | Pure TypeScript: frame maps, the keep/cut timeline, undo history, export, scoring. No DOM or Node APIs. |
 | `src/server/` | The local server: ingest, media with byte ranges, annotation saves with revisions, telemetry, the score report. |
-| `src/web/` | The React UI: player, timelines, check pass, queue, saving. |
+| `src/web/` | The React UI: player, timeline, check pass, queue, saving. |
 | `scripts/` | `ingest`, `score`, `perf` and `demo` (plays the demo steps in a Chrome window). |
-| `tests/` | Unit, property and end-to-end tests, all on synthetic data. |
+| `tests/` | Unit, property and end-to-end tests on synthetic data, plus the opt-in checks on the real recordings. |
 | `docs/` | [Design](docs/design.md), [scaling](docs/scaling.md), a [task guide template](docs/task-guide-template.md). |

@@ -105,5 +105,5 @@ async function isFile(path: string): Promise<boolean> {
 
 server.listen(Number(values.port), '127.0.0.1', () => {
   const count = catalog.recordings.length;
-  console.log(`Annotating ${count} recording(s) at http://localhost:${values.port}`);
+  console.log(`Annotating ${count} recording(s) at http://127.0.0.1:${values.port}`);
 });
