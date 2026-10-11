@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { SavePayload } from '../../../src/core/api-types.ts';
-import type { JournalEntry, UnsavedChanges } from '../../../src/web/journal.ts';
+import type { JournalEntry } from '../../../src/web/journal.ts';
 import { Saver } from '../../../src/web/saver.ts';
+import { memoryJournal } from './memory-journal.ts';
 
 const payload = (notes: string) =>
   ({
@@ -57,31 +58,7 @@ function server(...replies: Reply[]) {
   return calls;
 }
 
-/** An in-memory journal with the same rules as the IndexedDB one; `log` has every state. */
-function journal() {
-  let entry: JournalEntry | null = null;
-  const log: (JournalEntry | null)[] = [];
-  const fake: UnsavedChanges & { readonly entry: JournalEntry | null; readonly log: typeof log } = {
-    get entry() {
-      return entry;
-    },
-    log,
-    write: async (written) => {
-      entry = written;
-      log.push(entry);
-    },
-    settle: async (_id, writtenAt, revision) => {
-      if (entry && entry.writtenAt <= writtenAt) entry = null;
-      else if (entry) entry = { ...entry, baseRevision: revision, inFlight: null };
-      log.push(entry);
-    },
-    forget: async (_id, writtenAt) => {
-      if (entry && entry.writtenAt <= writtenAt) entry = null;
-      log.push(entry);
-    },
-  };
-  return fake;
-}
+const journal = memoryJournal;
 
 describe('Saver', () => {
   beforeEach(() => vi.useFakeTimers());
