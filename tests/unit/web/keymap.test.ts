@@ -1,5 +1,12 @@
-import { describe, expect, test } from 'vitest';
-import { BINDINGS, type Chord, chordLabel, IS_MAC, matches } from '../../../src/web/keymap.ts';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import {
+  BINDINGS,
+  type Chord,
+  chordLabel,
+  IS_MAC,
+  installKeymap,
+  matches,
+} from '../../../src/web/keymap.ts';
 
 const press = (key: string, code: string, mods: Partial<KeyboardEvent> = {}) =>
   ({
@@ -58,5 +65,94 @@ describe('keymap', () => {
     expect(chordLabel({ code: 'Space' })).toBe('Space');
     expect(chordLabel({ code: 'Digit3' })).toBe('3');
     expect(chordLabel({ code: 'Comma', shift: true })).toBe(IS_MAC ? '⇧,' : 'Shift+,');
+  });
+});
+
+/** The page's key listener, in Node: a window to dispatch on, and the elements it tells apart. */
+describe('installed keymap', () => {
+  class Element {}
+  class TextArea extends Element {}
+  class Button extends Element {}
+  beforeEach(() => {
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('HTMLElement', Element);
+    vi.stubGlobal('HTMLTextAreaElement', TextArea);
+    vi.stubGlobal('HTMLButtonElement', Button);
+    for (const name of ['HTMLSelectElement', 'HTMLInputElement', 'HTMLAnchorElement']) {
+      vi.stubGlobal(name, class extends Element {});
+    }
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const send = (
+    type: 'keydown' | 'keyup',
+    key: string,
+    code: string,
+    init: { readonly repeat?: boolean; readonly target?: object } = {},
+  ) => {
+    const event = new Event(type, { cancelable: true });
+    const fields = { key, code, repeat: init.repeat ?? false, target: init.target ?? null };
+    for (const [name, value] of Object.entries({
+      ...fields,
+      shiftKey: false,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      isComposing: false,
+    })) {
+      Object.defineProperty(event, name, { value });
+    }
+    window.dispatchEvent(event);
+    return event;
+  };
+
+  test('a key runs its command unless that command is off; the uninstaller stops it all', () => {
+    const ran: string[] = [];
+    const uninstall = installKeymap(
+      (command) => () => ran.push(command),
+      (command) => command !== 'keep',
+    );
+    expect(send('keydown', ' ', 'Space').defaultPrevented).toBe(true);
+    expect(send('keydown', 's', 'KeyS').defaultPrevented).toBe(false);
+    uninstall();
+    send('keydown', ' ', 'Space');
+    expect(ran).toEqual(['playPause']);
+  });
+
+  test('typed into a text field, a key is text; a focused button keeps Space and Enter', () => {
+    const ran: string[] = [];
+    const uninstall = installKeymap(
+      (command) => () => ran.push(command),
+      () => true,
+    );
+    send('keydown', 's', 'KeyS', { target: new TextArea() });
+    send('keydown', ' ', 'Space', { target: new Button() });
+    send('keydown', 's', 'KeyS', { target: new Button() });
+    expect(ran).toEqual(['keep']);
+    uninstall();
+  });
+
+  test('a held key repeats only commands that repeat; a hold key presses once and releases', () => {
+    const ran: string[] = [];
+    const uninstall = installKeymap(
+      (command) =>
+        command === 'skim'
+          ? { press: () => ran.push('skim down'), release: () => ran.push('skim up') }
+          : () => ran.push(command),
+      () => true,
+    );
+    send('keydown', 'ArrowRight', 'ArrowRight');
+    send('keydown', 'ArrowRight', 'ArrowRight', { repeat: true });
+    send('keydown', 's', 'KeyS');
+    send('keydown', 's', 'KeyS', { repeat: true });
+    send('keydown', 'f', 'KeyF');
+    send('keydown', 'f', 'KeyF', { repeat: true });
+    send('keyup', 'f', 'KeyF');
+    expect(ran).toEqual(['forward1', 'forward1', 'keep', 'skim down', 'skim up']);
+    // Released when the window loses the focus, as no keyup comes then.
+    send('keydown', 'f', 'KeyF');
+    window.dispatchEvent(new Event('blur'));
+    expect(ran.slice(-2)).toEqual(['skim down', 'skim up']);
+    uninstall();
   });
 });
