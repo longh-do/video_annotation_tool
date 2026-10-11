@@ -5,9 +5,12 @@ import {
   minSpan,
   panned,
   revealed,
+  scaleOf,
   TimelineView,
+  timelineEndUs,
   zoomed,
 } from '../../../src/web/timeline-view.ts';
+import { frameMap } from '../synthetic.ts';
 
 const MINUTE = 60_000_000;
 
@@ -71,5 +74,14 @@ describe('timeline view', () => {
     expect(calls).toBe(1);
     store.pan(1_000_000);
     expect(calls).toBe(2);
+  });
+
+  test('one scale turns frames into x and back; END is the end of the recording', () => {
+    // Four frames, 100 ms apart: the recording ends 100 ms after the last one starts.
+    const frames = frameMap(0n, [100_000, 100_000, 100_000]);
+    const endUs = timelineEndUs(frames);
+    const scale = scaleOf(fit(endUs), 400, frames, endUs);
+    expect([0, 1, 2, 3, 4].map(scale.xOf)).toEqual([0, 100, 200, 300, 400]);
+    expect([0, 99, 100, 250, 399, 400].map(scale.frameAt)).toEqual([0, 0, 1, 2, 3, 3]);
   });
 });

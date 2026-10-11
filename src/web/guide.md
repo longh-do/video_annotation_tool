@@ -4,11 +4,11 @@ Keep the parts of the recording where the task happens, as the Task tab describe
 
 ## 1. Mark while you watch
 
-Play the video (`Space`). Press `S` or **Start** where the task starts and `D` or **Stop** where it stops.
+Play the video (`Space`). Press `S` or **Start** where the task starts and `D` or **Stop** where it stops. Hold `F` (or the **6×** button) to skim at 6× through what is clearly not the task.
 
 ## 2. Check the marks
 
-Marks made while the video plays land a little late, so they show a **?** and *needs check*. Press `Enter`: the video stops on the next one. Put it on the exact frame where the task starts or stops with `,` and `.` (one frame at a time), or zoom the timeline in and drag it; then `Enter` accepts it and goes to the next. A click on a camera on the right shows it large, for a closer look. Marks made while paused are exact already.
+Marks made while the video plays land a little late, so they show a **?** and *needs check*. Press `Enter`: the video stops on the next one. Put it on the exact frame where the task starts or stops with `,` and `.` (one frame at a time; with `⇧`, ten), or zoom the timeline in and drag it; then `Enter` accepts it and goes to the next. A click on a camera on the right shows it large, for a closer look. Marks made while paused are exact already.
 
 ## 3. Submit
 

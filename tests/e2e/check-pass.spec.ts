@@ -205,17 +205,17 @@ test('Escape during a drag puts the boundary back', async ({ page }) => {
   expect(boundariesOf(await saved(page))).toEqual(before);
 });
 
-test('a very short run is pointed out, and one click takes it away', async ({ page }) => {
+test('a very short part is pointed out, and one click takes it away', async ({ page }) => {
   await open(page, 200);
   await page.keyboard.press('s');
   for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
   await expectShown(page, 204);
   await page.keyboard.press('d');
   await savedWhen(page, (b) => b.length === 2);
-  await expect(page.getByRole('button', { name: /1 very short run/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /1 very short part/ })).toBeVisible();
   await page.keyboard.press('BracketLeft');
   await expectShown(page, 200);
-  await expect(page.locator('.check-status')).toContainText('This keep lasts only');
+  await expect(page.locator('.check-status')).toContainText('This kept part lasts only');
   await page.getByRole('button', { name: 'Remove it' }).click();
   await expect(page.locator('.check-warning')).toHaveCount(0);
   await expect.poll(async () => (await saved(page))?.annotation.keep_intervals).toEqual([]);
@@ -239,10 +239,10 @@ test('the interval list selects an interval; the task guide is one tab away', as
   await page.getByRole('tab', { name: 'Task' }).click();
   const guideline = page.getByRole('tabpanel', { name: 'Task' });
   await expect(guideline.locator('h1')).toBeVisible();
-  // Neither the panel nor a link in it takes the keyboard.
+  // A click in the guide doesn't take the keyboard.
   await page.keyboard.press('Shift+ArrowRight');
   await expectShown(page, 70);
-  await guideline.locator('a').first().click();
+  await guideline.locator('h1').click();
   await page.keyboard.press('Space');
   await expect(page.locator('.time')).not.toHaveAttribute('data-frame', '70');
   await page.keyboard.press('Space');

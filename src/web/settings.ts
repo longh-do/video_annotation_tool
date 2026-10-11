@@ -1,8 +1,9 @@
 /**
  * Per-annotator conveniences kept in the browser: speed, sound, the side panel's width and the
- * camera shown big stick between recordings, and each recording reopens where it was left. Storage can be unavailable
- * (private windows, blocked site data); the defaults then apply. None of this is annotation data,
- * so none of it is saved on the server or makes a new revision.
+ * camera shown big stick between recordings, and each recording reopens where it was left.
+ * Storage can be unavailable (private windows, blocked site data); the defaults then apply. None
+ * of this makes a new revision; where a recording was left is also in its saved sidecar
+ * (`resume`), which the next save brings up to date.
  */
 type Settings = { speed: number; sound: boolean; panelWidth: number; mainCamera: string };
 

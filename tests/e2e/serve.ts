@@ -21,7 +21,7 @@ const TELEMETRY = join(E2E_DIR, 'telemetry');
 
 await writeSyntheticRecordings(DATA);
 
-// One task guide, with a link to a moment; synthetic-e is left without a task on purpose.
+// One task guide; synthetic-e is left without a task on purpose.
 const guide = [
   '---',
   'recordings: synthetic-a, synthetic-b, synthetic-c, synthetic-d',
@@ -30,8 +30,6 @@ const guide = [
   '# Example task for the tests',
   '',
   'This guide only exists for the end-to-end tests.',
-  '',
-  'It links to [a moment in synthetic-c](#synthetic-c/30).',
 ];
 await mkdir(TASKS, { recursive: true });
 await writeFile(join(TASKS, 'synthetic.md'), `${guide.join('\n')}\n`);

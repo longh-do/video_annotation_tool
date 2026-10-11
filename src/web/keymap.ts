@@ -108,13 +108,13 @@ export const BINDINGS = [
     command: 'previousBoundary',
     label: 'Previous boundary',
     group: 'Navigate',
-    chords: [{ code: 'BracketLeft' }, { code: 'Tab', shift: true }],
+    chords: [{ code: 'BracketLeft' }],
   },
   {
     command: 'nextBoundary',
     label: 'Next boundary',
     group: 'Navigate',
-    chords: [{ code: 'BracketRight' }, { code: 'Tab' }],
+    chords: [{ code: 'BracketRight' }],
   },
   {
     command: 'zoomIn',
@@ -271,7 +271,6 @@ const KEY_NAMES: Record<string, string> = {
   BracketRight: ']',
   Comma: ',',
   Period: '.',
-  Tab: 'Tab',
   Equal: '+',
   Minus: '−',
 };

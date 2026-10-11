@@ -58,3 +58,18 @@ test('a question about an outcome is an alert dialog with its keys on its button
   await page.keyboard.press('Escape');
   await expect(question).toBeHidden();
 });
+
+test('Tab moves the keyboard focus, so the Task and Guide tabs can be opened without a mouse', async ({
+  page,
+}) => {
+  for (const name of ['Task', 'Guide']) {
+    const tab = page.getByRole('tab', { name });
+    const focused = () => tab.evaluate((element) => element === document.activeElement);
+    for (let presses = 0; presses < 60 && !(await focused()); presses++) {
+      await page.keyboard.press('Tab');
+    }
+    await expect(tab).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+  }
+});

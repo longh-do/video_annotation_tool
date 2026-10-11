@@ -15,8 +15,9 @@ test('renders the guideline subset: headings, paragraphs, lists and inline marks
   );
 });
 
-test('time links stay in the tool; web links open a new tab; anything else is plain text', () => {
-  expect(render('[0:26](#rec/780)')).toBe('<p><a href="#rec/780">0:26</a></p>');
+test('web links open a new tab; anything else, links to moments included, is plain text', () => {
+  // Guides are written before anyone has seen the recordings, so they never point at a moment.
+  expect(render('[0:26](#rec/780)')).toBe('<p>0:26</p>');
   expect(render('[site](https://example.com)')).toBe(
     '<p><a href="https://example.com" target="_blank" rel="noreferrer">site</a></p>',
   );

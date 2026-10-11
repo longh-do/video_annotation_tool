@@ -1,8 +1,8 @@
 /**
  * Renders a guideline written in a small subset of Markdown: headings, paragraphs, bulleted and
  * numbered lists, **bold**, *italic*, `code` and [links](…). It builds React elements, never HTML
- * strings, so a guideline can't inject markup. Links to `#<recording>/<frame>` stay in the tool and
- * jump to that moment; other links open in a new tab.
+ * strings, so a guideline can't inject markup. Web links open in a new tab; any other link is shown
+ * as its text.
  */
 import type { MouseEvent, ReactNode } from 'react';
 
@@ -96,13 +96,6 @@ function inline(text: string): ReactNode[] {
 const keepFocus = (event: MouseEvent) => event.preventDefault();
 
 function link(key: number, label: string, href: string): ReactNode {
-  if (href.startsWith('#')) {
-    return (
-      <a key={key} href={href} onMouseDown={keepFocus}>
-        {inline(label)}
-      </a>
-    );
-  }
   if (!/^https?:\/\//.test(href)) return label;
   return (
     <a key={key} href={href} target="_blank" rel="noreferrer" onMouseDown={keepFocus}>

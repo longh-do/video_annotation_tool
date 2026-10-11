@@ -1,4 +1,4 @@
-import { type FrameMap, frameCount } from '../core/frame-map.ts';
+import { displayedFrame, type FrameMap, frameCount } from '../core/frame-map.ts';
 
 /**
  * Which stretch of the recording the timeline shows. Zoomed out, the whole recording; zoomed in,
@@ -69,6 +69,25 @@ export function revealed(view: View, durationUs: number, us: number, playing: bo
   }
   if (us >= view.startUs && us <= end) return view;
   return clamp({ startUs: us - view.spanUs / 2, spanUs: view.spanUs }, durationUs);
+}
+
+/**
+ * Where things fall on a bar `width` pixels wide that shows `view`, and back: the one place the
+ * timeline turns frames and times into x.
+ */
+export function scaleOf(view: View, width: number, frames: FrameMap, endUs: number) {
+  const last = frameCount(frames) - 1;
+  const xOfUs = (us: number) => ((us - view.startUs) / view.spanUs) * width;
+  return {
+    xOfUs,
+    /** A frame's left edge; END (`frameCount`) is the end of the recording. */
+    xOf: (position: number) => xOfUs(position > last ? endUs : (frames.ptsUs[position] ?? 0)),
+    /** The frame on screen at `x`. */
+    frameAt: (x: number) => {
+      const us = view.startUs + (x / width) * view.spanUs;
+      return Math.min(Math.max(displayedFrame(frames, 0, us / 1e6), 0), last);
+    },
+  };
 }
 
 /** The view a store holds; the timeline subscribes to it. */

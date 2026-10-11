@@ -95,6 +95,7 @@ export function Transport(props: TransportProps) {
       </div>
       <div className="transport-side transport-end">
         <SpeedMenu player={player} onSpeed={props.onSpeed} />
+        <SkimButton player={player} />
         <button
           type="button"
           className="icon-button"
@@ -181,6 +182,31 @@ function SpeedMenu({
         />
       )}
     </>
+  );
+}
+
+/** Skims while held down, as holding F does: for stretches that are clearly not the task. */
+function SkimButton({ player }: { readonly player: Player | null }) {
+  const skimming = usePlayer(player, (s) => s.skimming);
+  const stop = () => player?.skim(false);
+  return (
+    <button
+      type="button"
+      className="skim"
+      title={`Hold to skim at ${SKIM_SPEED}× (or hold ${keysOf('skim')})`}
+      aria-pressed={skimming}
+      onMouseDown={(event) => event.preventDefault()}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        player?.skim(true);
+      }}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onLostPointerCapture={stop}
+    >
+      {SKIM_SPEED}× <kbd>{keysOf('skim')}</kbd>
+    </button>
   );
 }
 

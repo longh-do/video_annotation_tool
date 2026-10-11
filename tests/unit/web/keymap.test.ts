@@ -21,6 +21,12 @@ describe('keymap', () => {
     expect(new Set(chords).size).toBe(chords.length);
   });
 
+  test('Tab and ⇧Tab are left to the browser, so the keyboard can reach every control', () => {
+    const tab = [press('Tab', 'Tab'), press('Tab', 'Tab', { shiftKey: true })];
+    const taken = BINDINGS.filter((b) => b.chords.some((c) => tab.some((e) => matches(c, e))));
+    expect(taken.map((b) => b.command)).toEqual([]);
+  });
+
   test('letters follow the layout, with the physical key as a fallback for non-Latin layouts', () => {
     const keep = { key: 's' };
     expect(matches(keep, press('s', 'KeyS'))).toBe(true);

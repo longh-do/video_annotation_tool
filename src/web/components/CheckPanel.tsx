@@ -44,10 +44,10 @@ export function CheckPanel(props: CheckPanelProps) {
     <section className="check" aria-label="Check pass">
       <p className="check-status">
         {checking
-          ? `${left} ${left === 1 ? 'mark needs' : 'marks need'} checking. Put this one on its exact frame with , and . (or drag it on the timeline).`
+          ? `${left} ${left === 1 ? 'mark needs' : 'marks need'} checking. Put this one on its exact frame with , and . (⇧ for 10 frames), or drag it on the timeline.`
           : left > 0
             ? `${left} ${left === 1 ? 'mark needs' : 'marks need'} checking. Marks made while the video plays can be a few frames late.`
-            : timeline.boundaries.length > 0 && 'Every boundary is checked.'}{' '}
+            : 'Every boundary is checked.'}{' '}
         {left > 0 && (
           <button
             type="button"
@@ -66,12 +66,12 @@ export function CheckPanel(props: CheckPanelProps) {
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => props.onVisit(short[0]!.start)}
           >
-            {short.length} very short {short.length === 1 ? 'run' : 'runs'}: show
+            {short.length} very short {short.length === 1 ? 'part' : 'parts'}: show
           </button>
         )}
         {run && (
           <span className="check-warning">
-            This {run.state} lasts only{' '}
+            This {run.state === 'keep' ? 'kept' : 'cut'} part lasts only{' '}
             {durationSeconds(stopNs(frames, run.end) - frameNs(frames, run.start)).toFixed(2)} s.{' '}
             <button
               type="button"

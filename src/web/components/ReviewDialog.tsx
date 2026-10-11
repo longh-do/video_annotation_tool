@@ -1,20 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ReviewReason } from '../../core/annotation.ts';
+import { REVIEW_REASONS, type ReviewReason } from '../../core/annotation.ts';
 
-export const REVIEW_REASONS: readonly {
-  readonly reason: ReviewReason;
-  readonly label: string;
-  readonly hint: string;
-}[] = [
-  { reason: 'unclear_boundary', label: 'Unclear boundary', hint: 'say where in the note' },
-  { reason: 'unfinished_task', label: 'Unfinished task', hint: 'the recording ends mid-task' },
-  {
-    reason: 'collection_problem',
+/** How each reason reads on screen; its number key is its place in REVIEW_REASONS. */
+const REASON_TEXT: Readonly<
+  Record<ReviewReason, { readonly label: string; readonly hint: string }>
+> = {
+  unclear_boundary: { label: 'Unclear boundary', hint: 'say where in the note' },
+  unfinished_task: { label: 'Unfinished task', hint: 'the recording ends mid-task' },
+  collection_problem: {
     label: 'Collection problem',
     hint: 'frozen camera, desync, wrong procedure, hardware fault: goes back to the collection team',
   },
-  { reason: 'other', label: 'Other', hint: 'explain in the note' },
-];
+  other: { label: 'Other', hint: 'explain in the note' },
+};
+const OPTIONS = REVIEW_REASONS.map((reason) => ({ reason, ...REASON_TEXT[reason] }));
 
 interface ReviewDialogProps {
   readonly onSubmit: (reason: ReviewReason, notes: string) => void;
@@ -39,7 +38,7 @@ export function ReviewDialog({ onSubmit, onCancel }: ReviewDialogProps) {
     input.current?.focus();
   };
   const submit = () => {
-    const option = REVIEW_REASONS.find((r) => r.reason === reason);
+    const option = OPTIONS.find((r) => r.reason === reason);
     if (!option) return;
     onSubmit(option.reason, note.trim() ? `${option.label}: ${note.trim()}` : option.label);
   };
@@ -60,7 +59,7 @@ export function ReviewDialog({ onSubmit, onCancel }: ReviewDialogProps) {
           if (event.key === 'Escape') onCancel();
           else if (event.key === 'Enter' && sends) submit();
           else if (event.target !== input.current && /^[1-4]$/.test(event.key)) {
-            const option = REVIEW_REASONS[Number(event.key) - 1];
+            const option = OPTIONS[Number(event.key) - 1];
             if (option) choose(option.reason);
             event.preventDefault();
           } else return;
@@ -68,7 +67,7 @@ export function ReviewDialog({ onSubmit, onCancel }: ReviewDialogProps) {
         }}
       >
         <h2>Needs review — why?</h2>
-        {REVIEW_REASONS.map((option, i) => (
+        {OPTIONS.map((option, i) => (
           <button
             key={option.reason}
             type="button"

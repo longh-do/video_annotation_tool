@@ -401,6 +401,10 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
+.skim[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
 .zoom {
   display: inline-flex;
   gap: 2px;
@@ -421,7 +425,7 @@ kbd {
 /* The timeline: ruler on top, the track below, badges on the track's edge. */
 .timeline {
   position: relative;
-  height: 78px;
+  height: var(--tl-height);
   cursor: default;
   touch-action: none;
   user-select: none;
@@ -439,7 +443,7 @@ kbd {
 
 .tl-badge {
   position: absolute;
-  top: 26px;
+  top: calc(var(--tl-track-top) - 8px);
   display: grid;
   place-items: center;
   width: 16px;
